@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VR-N7600 Remote</title>
+<style>
+:root{
+  --bg:#0b1017; --panel:#121a26; --panel2:#182333; --line:#233247;
+  --text:#dbe6f4; --dim:#7d90a8; --acc:#2dd4bf; --warn:#fbbf24;
+  --bad:#f87171; --good:#4ade80; --tx:#f87171; --rx:#4ade80;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+h1{font-size:16px;margin:0;letter-spacing:.5px}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:5}
+.badge{padding:2px 9px;border-radius:10px;font-size:12px;font-weight:600;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+.badge.on{color:#032;background:var(--acc);border-color:var(--acc)}
+.badge.tx{color:#300;background:var(--tx);border-color:var(--tx)}
+.badge.rx{color:#031;background:var(--rx);border-color:var(--rx)}
+.badge.warn{color:#320;background:var(--warn);border-color:var(--warn)}
+.spacer{flex:1}
+button{background:var(--panel2);color:var(--text);border:1px solid var(--line);
+  border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px}
+button:hover{border-color:var(--acc)}
+button.acc{background:var(--acc);color:#04231f;border-color:var(--acc);font-weight:600}
+button.danger{border-color:var(--bad);color:var(--bad)}
+button:disabled{opacity:.4;cursor:default}
+nav{display:flex;gap:2px;padding:0 14px;background:var(--panel);
+  border-bottom:1px solid var(--line);overflow-x:auto}
+nav button{border:0;border-radius:0;background:none;color:var(--dim);
+  padding:9px 16px;font-size:13px;font-weight:600;letter-spacing:.4px}
+nav button.on{color:var(--acc);box-shadow:inset 0 -2px 0 var(--acc)}
+main{padding:14px;max-width:1250px;margin:0 auto}
+.tab{display:none}
+.tab.on{display:block}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cols3{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+@media(max-width:900px){.cols,.cols3{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:12px 14px;margin-bottom:14px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;
+  color:var(--dim);margin:0 0 10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{color:var(--dim);text-align:left;font-weight:500;font-size:11px;
+  text-transform:uppercase;letter-spacing:.6px;padding:4px 6px;
+  border-bottom:1px solid var(--line)}
+td{padding:5px 6px;border-bottom:1px solid #1a2536;white-space:nowrap}
+tr.ch:hover{background:var(--panel2);cursor:pointer}
+tr.selA td:first-child{box-shadow:inset 3px 0 0 var(--acc)}
+tr.selB td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
+.chname{font-weight:600}
+.dimtxt{color:var(--dim)}
+.abbtn{padding:2px 8px;font-size:11px;border-radius:4px}
+.abbtn.selected{background:var(--acc);color:#04231f;border-color:var(--acc)}
+.abbtn.selectedB{background:var(--warn);color:#320;border-color:var(--warn)}
+.row{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+.row label{min-width:110px;color:var(--dim);font-size:12px}
+input[type=range]{flex:1;accent-color:var(--acc)}
+input[type=text],input[type=number],select,textarea{background:var(--panel2);
+  color:var(--text);border:1px solid var(--line);border-radius:6px;
+  padding:6px 8px;font-size:13px}
+input:invalid{border-color:var(--bad)}
+.val{min-width:34px;text-align:right;font-variant-numeric:tabular-nums}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:5px 12px}
+.seg button.on{background:var(--acc);color:#04231f;font-weight:600}
+.logbox{font:12px/1.5 ui-monospace,Menlo,monospace;max-height:400px;
+  overflow-y:auto;color:var(--dim);white-space:pre-wrap}
+.logbox .t{color:#4c637f}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);
+  border-radius:12px;padding:18px;min-width:340px;max-width:94vw}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.grid2{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center}
+.grid2 label{color:var(--dim);font-size:12px}
+.grid4{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:8px 10px;align-items:center}
+.grid4 label{color:var(--dim);font-size:12px}
+@media(max-width:700px){.grid4{grid-template-columns:auto 1fr}}
+#connectCard ul{list-style:none;margin:8px 0;padding:0;max-height:200px;overflow-y:auto}
+#connectCard li{padding:6px 8px;border-bottom:1px solid #1a2536;cursor:pointer;
+  display:flex;justify-content:space-between}
+#connectCard li:hover{background:var(--panel2)}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px}
+.stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  padding:8px 10px;text-align:center}
+.stat .v{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat .k{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}
+.aprsfeed{max-height:480px;overflow-y:auto}
+.aprspkt{border:1px solid var(--line);border-left:3px solid var(--acc);
+  border-radius:6px;padding:6px 10px;margin:6px 0;background:var(--panel2);font-size:13px}
+.aprspkt.tx{border-left-color:var(--warn)}
+.aprspkt .hdr{display:flex;gap:8px;font-weight:600}
+.aprspkt .hdr .time{margin-left:auto;color:var(--dim);font-weight:400;font-size:11px}
+.aprspkt .body{color:var(--dim);margin-top:2px;white-space:pre-wrap;word-break:break-word}
+.pill{font-size:10px;padding:1px 7px;border-radius:8px;background:var(--panel);
+  border:1px solid var(--line);color:var(--dim);text-transform:uppercase}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0}
+.check input{accent-color:var(--acc)}
+fieldset{border:1px solid var(--line);border-radius:8px;margin:0 0 12px;padding:8px 12px}
+legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.8px;padding:0 6px}
+/* virtual radio screen */
+.lcd{background:#0a1208;border:1px solid #2c4a24;border-radius:12px;
+  box-shadow:inset 0 0 40px rgba(90,200,90,.06);
+  font-family:ui-monospace,Menlo,Consolas,monospace;color:#8fe08f}
+.lcd .hid{visibility:hidden}
+.lcd-icons{display:flex;gap:10px;align-items:center;font-size:11px;
+  letter-spacing:1px;border-bottom:1px dashed #24401e;padding-bottom:6px;margin-bottom:8px}
+.lcd-ic{color:#8fe08f}
+.lcd-ic.alert{color:#ffd45e}
+.lcd-ic.tx{color:#ff7a6e}
+.lcd-spacer{flex:1}
+.lcd-vfo{display:flex;align-items:center;gap:10px;padding:6px 4px;border-radius:8px}
+.lcd-vfo.active{background:rgba(120,230,120,.08)}
+.lcd-vfo.rxing{background:rgba(120,230,120,.16)}
+.lcd-vfo.txing{background:rgba(255,110,100,.14)}
+.lcd-ab{font-size:15px;font-weight:700;border:1px solid #2c4a24;border-radius:5px;
+  padding:1px 7px;color:#8fe08f}
+.lcd-ab.b{color:#ffd45e;border-color:#4a3c14}
+.lcd-arrow{width:12px;color:#d6ffd6;font-weight:700}
+.lcd-main{flex:1;min-width:0}
+.lcd-name{font-size:15px;font-weight:600;color:#d6ffd6;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.lcd-freq{font-size:24px;font-weight:700;letter-spacing:1px;color:#aef0ae;
+  font-variant-numeric:tabular-nums}
+.lcd-sub{text-align:right;font-size:11px;color:#5d9a5d;white-space:pre-line}
+.lcd-foot{border-top:1px dashed #24401e;margin-top:8px;padding-top:6px;
+  font-size:11px;color:#5d9a5d;display:flex;gap:14px;flex-wrap:wrap}
+@media(max-width:600px){.lcd-freq{font-size:18px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>VR-N7600 <span class="dimtxt">REMOTE</span></h1>
+  <span id="bConn" class="badge">OFFLINE</span>
+  <span id="bPower" class="badge" hidden>PWR</span>
+  <span id="bTx" class="badge tx" hidden>TX</span>
+  <span id="bRx" class="badge rx" hidden>RX</span>
+  <span id="bScan" class="badge warn" hidden>SCAN</span>
+  <span id="bGps" class="badge on" hidden>GPS</span>
+  <div class="spacer"></div>
+  <button id="btnRefresh" onclick="refresh()" disabled>Refresh</button>
+  <button id="btnDisc" class="danger" onclick="disconnectRadio()" hidden>Disconnect</button>
+</header>
+<nav id="tabs">
+  <button data-tab="dash" class="on">Dashboard</button>
+  <button data-tab="channels">Channels</button>
+  <button data-tab="aprs">APRS</button>
+  <button data-tab="settings">Settings</button>
+  <button data-tab="log">Log</button>
+</nav>
+
+<main>
+<!-- ======================= DASHBOARD ======================= -->
+<div class="tab on" id="tab-dash">
+  <div class="lcd card" id="lcd">
+    <div class="lcd-icons">
+      <span id="iPwr" class="lcd-ic">⏻</span>
+      <span id="iTx" class="lcd-ic hid">TX</span>
+      <span id="iRx" class="lcd-ic hid">RX</span>
+      <span id="iScan" class="lcd-ic hid">SCAN</span>
+      <span id="iDw" class="lcd-ic hid">DW</span>
+      <span id="iGps" class="lcd-ic hid">GPS</span>
+      <span id="iBt" class="lcd-ic hid">BT</span>
+      <span class="lcd-spacer"></span>
+      <span id="iVol" class="lcd-ic">VOL –</span>
+      <span id="iSql" class="lcd-ic">SQL –</span>
+      <span id="iBatt" class="lcd-ic">▮▮▮</span>
+    </div>
+    <div class="lcd-vfo" id="lcdA">
+      <span class="lcd-ab">A</span>
+      <span class="lcd-arrow" id="arrA"></span>
+      <div class="lcd-main">
+        <div class="lcd-name" id="lcdAName">—</div>
+        <div class="lcd-freq" id="lcdAFreq">———.————</div>
+      </div>
+      <div class="lcd-sub" id="lcdAInfo"></div>
+    </div>
+    <div class="lcd-vfo" id="lcdB">
+      <span class="lcd-ab b">B</span>
+      <span class="lcd-arrow" id="arrB"></span>
+      <div class="lcd-main">
+        <div class="lcd-name" id="lcdBName">—</div>
+        <div class="lcd-freq" id="lcdBFreq">———.————</div>
+      </div>
+      <div class="lcd-sub" id="lcdBInfo"></div>
+    </div>
+    <div class="lcd-foot" id="lcdFoot">not connected</div>
+  </div>
+  <div class="card" id="connectCard">
+    <h2>Connect</h2>
+    <div class="row">
+      <input type="text" id="macInput" placeholder="AA:BB:CC:DD:EE:FF" style="width:190px">
+      <select id="transportSel">
+        <option value="auto">auto</option><option value="ble">BLE</option>
+        <option value="rfcomm">RFCOMM</option>
+      </select>
+      <button class="acc" onclick="connectRadio()">Connect</button>
+      <button onclick="scanDevices()" id="btnScan">Scan</button>
+    </div>
+    <ul id="scanList"></ul>
+  </div>
+  <div class="cols">
+    <div class="card">
+      <h2>Radio</h2>
+      <div class="statgrid">
+        <div class="stat"><div class="v" id="stChA">–</div><div class="k">VFO A ch</div></div>
+        <div class="stat"><div class="v" id="stChB">–</div><div class="k">VFO B ch</div></div>
+        <div class="stat"><div class="v" id="stRssi">–</div><div class="k">RSSI</div></div>
+        <div class="stat"><div class="v" id="stBatt">–</div><div class="k">Battery</div></div>
+      </div>
+      <div class="row"><label>Dual watch</label>
+        <div class="seg" id="dwSeg">
+          <button data-v="0">Off</button><button data-v="1">A</button><button data-v="2">B</button>
+        </div>
+        <div class="spacer"></div>
+        <button onclick="powerRadio(1)">Power on</button>
+        <button class="danger" onclick="powerRadio(0)">Off</button>
+      </div>
+      <div class="row"><label>Volume</label>
+        <input type="range" id="vol" min="0" max="15" step="1" onchange="setVolume(this.value)">
+        <span class="val" id="volVal">–</span></div>
+      <div class="row"><label>Squelch</label>
+        <input type="range" id="sql" min="0" max="9" step="1" onchange="setSquelch(this.value)">
+        <span class="val" id="sqlVal">–</span></div>
+      <div class="row"><label>Channel scan</label>
+        <div class="seg" id="scanSeg">
+          <button data-v="0">Off</button><button data-v="1">On</button>
+        </div>
+        <div class="spacer"></div>
+        <button onclick="getPosition()">GPS fix</button>
+      </div>
+      <div class="dimtxt" id="devInfo" style="font-size:11px;margin-top:6px"></div>
+    </div>
+    <div class="card">
+      <h2>Active channels</h2>
+      <div id="activeChans" class="dimtxt">–</div>
+      <h2 style="margin-top:16px">Recent activity</h2>
+      <div class="logbox" id="miniLog" style="max-height:220px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= CHANNELS ======================= -->
+<div class="tab" id="tab-channels">
+  <div class="card">
+    <h2>Channel memory
+      <button style="float:right;padding:2px 8px;font-size:11px"
+        onclick="loadChannels(1)" id="btnChRefresh">read from radio</button></h2>
+    <table id="chTable">
+      <thead><tr><th>#</th><th>Name</th><th>RX MHz</th><th>TX MHz</th>
+        <th>Mode</th><th>RX tone</th><th>TX tone</th><th>BW</th><th>Pwr</th>
+        <th>Scan</th><th>Flags</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="dimtxt" id="chEmpty">No channels loaded — connect and press “read from radio”.</div>
+  </div>
+</div>
+
+<!-- ======================= APRS ======================= -->
+<div class="tab" id="tab-aprs">
+  <div class="cols3">
+    <div>
+      <div class="card">
+        <h2>Live feed <span class="pill" id="aprsCount">0</span></h2>
+        <div class="aprsfeed" id="aprsFeed"><div class="dimtxt">No packets yet.</div></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>Send</h2>
+        <div class="grid2">
+          <label>To</label><input type="text" id="msgTo" placeholder="MB7UC / GM0XYZ-7" style="text-transform:uppercase">
+          <label>Message</label><textarea id="msgText" rows="2" maxlength="67"></textarea>
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="acc" onclick="sendAprsMsg()">Send message</button>
+        </div>
+        <hr style="border-color:var(--line)">
+        <div class="grid2">
+          <label>Lat</label><input type="number" id="bcnLat" step="0.00001" placeholder="55.94">
+          <label>Lon</label><input type="number" id="bcnLon" step="0.00001" placeholder="-4.75">
+          <label>Comment</label><input type="text" id="bcnComment" maxlength="40">
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button onclick="geoFill()">Use my location</button>
+          <button class="acc" onclick="sendBeacon()">Beacon now</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>APRS / beacon config <button style="float:right;padding:2px 8px;font-size:11px"
+            onclick="loadBss(1)">reload</button></h2>
+        <div class="grid2">
+          <label>Callsign</label><input type="text" id="bCall" maxlength="6" style="text-transform:uppercase">
+          <label>SSID</label><input type="number" id="bSsid" min="0" max="15">
+          <label>Symbol</label><input type="text" id="bSymbol" maxlength="2" placeholder="/$">
+          <label>Path</label><input type="text" id="bPath" placeholder="WIDE1-1,WIDE2-1" style="text-transform:uppercase">
+          <label>Format</label><select id="bFormat">
+            <option value="1">APRS</option><option value="0">BSS</option></select>
+          <label>Beacon text</label><input type="text" id="bMessage" maxlength="18">
+          <label>ID info</label><input type="text" id="bIdInfo" maxlength="12">
+          <label>Interval (s)</label><input type="number" id="bInterval" min="0" max="2550" step="10">
+        </div>
+        <div class="check"><input type="checkbox" id="bShareLoc"><label for="bShareLoc">Share location (auto beacon)</label></div>
+        <div class="check"><input type="checkbox" id="bPttLoc"><label for="bPttLoc">Send location on PTT release</label></div>
+        <div class="check"><input type="checkbox" id="bPttId"><label for="bPttId">Send ID info on PTT release</label></div>
+        <div class="check"><input type="checkbox" id="bSmart"><label for="bSmart">Smart beacon</label></div>
+        <div class="check"><input type="checkbox" id="bMicE"><label for="bMicE">Mic-E format</label></div>
+        <div class="check"><input type="checkbox" id="bPwrV"><label for="bPwrV">Send battery voltage</label></div>
+        <div class="check"><input type="checkbox" id="bPosChk"><label for="bPosChk">Allow position check</label></div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="acc" onclick="saveBss()">Write to radio</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= SETTINGS ======================= -->
+<div class="tab" id="tab-settings">
+  <div class="card">
+    <h2>Radio settings <button style="float:right;padding:2px 8px;font-size:11px"
+        onclick="renderSettingsTab()">reload</button></h2>
+    <form id="setForm" onsubmit="return false">
+      <div class="cols">
+        <div>
+          <fieldset><legend>Audio</legend>
+            <div class="grid2">
+              <label>Mic gain (0-2)</label><select id="sMicGain"><option>0</option><option>1</option><option>2</option></select>
+              <label>BT mic gain (0-2)</label><select id="sBtMic"><option>0</option><option>1</option><option>2</option></select>
+              <label>Local speaker</label><select id="sSpeaker">
+                <option value="0">Auto</option><option value="1">Speaker</option>
+                <option value="2">Both</option><option value="3">Off?</option></select>
+              <label>Alarm volume</label><input type="number" id="sAlarmVol" min="0" max="15">
+            </div>
+            <div class="check"><input type="checkbox" id="sTone"><label for="sTone">Key/roger tones</label></div>
+            <div class="check"><input type="checkbox" id="sTailElim"><label for="sTailElim">Squelch tail eliminate</label></div>
+            <div class="check"><input type="checkbox" id="sNs"><label for="sNs">Noise suppression</label></div>
+            <div class="check"><input type="checkbox" id="sDisBtMic"><label for="sDisBtMic">Disable BT mic</label></div>
+          </fieldset>
+          <fieldset><legend>VOX</legend>
+            <div class="check"><input type="checkbox" id="sVoxEn"><label for="sVoxEn">VOX enable</label></div>
+            <div class="grid2">
+              <label>VOX level</label><input type="number" id="sVoxLevel" min="0" max="7">
+              <label>VOX delay</label><input type="number" id="sVoxDelay" min="0" max="7">
+            </div>
+          </fieldset>
+          <fieldset><legend>TX</legend>
+            <div class="grid2">
+              <label>TX time limit</label><input type="number" id="sTxLimit" min="0" max="31">
+              <label>TX hold time</label><input type="number" id="sTxHold" min="0" max="15">
+            </div>
+            <div class="check"><input type="checkbox" id="sPttLock"><label for="sPttLock">PTT lock</label></div>
+          </fieldset>
+        </div>
+        <div>
+          <fieldset><legend>Power / display</legend>
+            <div class="grid2">
+              <label>Auto power off</label><input type="number" id="sApo" min="0" max="7">
+              <label>Screen timeout</label><input type="number" id="sScreen" min="0" max="31">
+            </div>
+            <div class="check"><input type="checkbox" id="sAutoPower"><label for="sAutoPower">Auto power on</label></div>
+            <div class="check"><input type="checkbox" id="sPowerSave"><label for="sPowerSave">Power saving mode</label></div>
+            <div class="check"><input type="checkbox" id="sImperial"><label for="sImperial">Imperial units</label></div>
+          </fieldset>
+          <fieldset><legend>GPS / position</legend>
+            <div class="grid2">
+              <label>Positioning</label><select id="sGnss">
+                <option value="0">Off</option><option value="1">GPS</option>
+                <option value="2">BDS</option><option value="3">GPS+BDS</option>
+                <option value="4">GLONASS</option><option value="5">GPS+GLONASS</option>
+              </select>
+              <label>Time offset</label><input type="number" id="sTimeOff" min="0" max="63">
+              <label>Auto-share ch</label><input type="number" id="sShareCh" min="0" max="255">
+            </div>
+          </fieldset>
+          <fieldset><legend>KISS / data</legend>
+            <div class="check"><input type="checkbox" id="sKiss"><label for="sKiss">KISS TNC mode</label></div>
+            <div class="check"><input type="checkbox" id="sKissUp"><label for="sKissUp">KISS upload TX msgs</label></div>
+            <div class="grid2">
+              <label>KISS TX delay</label><input type="number" id="sKissDelay" min="0" max="255">
+              <label>KISS TX tail</label><input type="number" id="sKissTail" min="0" max="255">
+            </div>
+          </fieldset>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <label class="check" style="min-width:0"><input type="checkbox" id="sStore"> persist to flash</label>
+        <button class="acc" onclick="saveSettingsTab()">Write to radio</button>
+      </div>
+    </form>
+    <div class="dimtxt" id="setRaw" style="font-size:11px;margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ======================= LOG ======================= -->
+<div class="tab" id="tab-log">
+  <div class="card">
+    <h2>Event log</h2>
+    <div class="logbox" id="log"></div>
+  </div>
+</div>
+</main>
+
+<dialog id="chDlg">
+  <h2 style="margin-top:0" id="chDlgTitle">Edit channel</h2>
+  <div class="grid4">
+    <label>Name</label><input type="text" id="eName" maxlength="10">
+    <label>Mode</label><select id="eMode">
+      <option value="0">FM</option><option value="1">AM</option><option value="2">DMR</option></select>
+    <label>RX MHz</label><input type="number" id="eRx" step="0.000001">
+    <label>TX MHz</label><input type="number" id="eTx" step="0.000001">
+    <label>RX tone</label><select id="eRxT"></select>
+    <label>TX tone</label><select id="eTxT"></select>
+    <label>Bandwidth</label><select id="eBw">
+      <option value="false">12.5 kHz (N)</option><option value="true">25 kHz (W)</option></select>
+    <label>TX power</label><select id="ePow">
+      <option value="max">High</option><option value="med">Medium</option>
+      <option value="low">Low</option></select>
+  </div>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+    <label class="check"><input type="checkbox" id="eScan"> in scan</label>
+    <label class="check"><input type="checkbox" id="eTxDis"> TX disable</label>
+    <label class="check"><input type="checkbox" id="eBclo"> BCLO</label>
+    <label class="check"><input type="checkbox" id="eTalk"> talkaround</label>
+    <label class="check"><input type="checkbox" id="eMute"> mute</label>
+    <label class="check"><input type="checkbox" id="eRev"> reverse</label>
+  </div>
+  <div class="row" style="justify-content:flex-end;margin-top:14px">
+    <button onclick="chDlg.close()">Cancel</button>
+    <button class="acc" onclick="saveChannel()">Write to radio</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let state={connected:false,channels:[],settings:null,ht_status:null,
+  bss:null,aprs_path:"",aprs_log:[]};
+let editingCh=null, ws=null, wsTimer=null;
+
+const CTCSS=[67,69.3,71.9,74.4,77,79.7,82.5,85.4,88.5,91.5,94.8,97.4,100,
+ 103.5,107.2,110.9,114.8,118.8,123,127.3,131.8,136.5,141.3,146.2,151.4,
+ 156.7,162.2,167.9,173.8,179.9,186.2,192.8,203.5,210.7,218.1,225.7,233.6,
+ 241.8,250.3,254.1];
+
+/* ---------------- tabs ---------------- */
+$("tabs").addEventListener("click",e=>{
+  const t=e.target.dataset.tab;if(!t)return;
+  for(const b of $("tabs").children)b.classList.toggle("on",b.dataset.tab===t);
+  for(const d of document.querySelectorAll(".tab"))
+    d.classList.toggle("on",d.id==="tab-"+t);
+  if(t==="aprs"&&state.connected&&!state.bss)loadBss(0);
+  if(t==="settings")renderSettingsTab();
+});
+
+/* ---------------- helpers ---------------- */
+function logLine(msg){
+  const t=new Date().toTimeString().slice(0,8);
+  const html=`<div><span class="t">${t}</span> ${msg}</div>`;
+  for(const id of ["log","miniLog"]){
+    const el=$(id);el.innerHTML=html+el.innerHTML;
+    while(el.childElementCount>250)el.lastChild.remove();
+  }
+}
+function mhz(hz){return hz?(hz/1e6).toFixed(4).replace(/0{0,2}$/,""):"–";}
+function toneTxt(v){if(!v)return"";return v<6700?("D"+v):((v/100).toFixed(1));}
+function esc(s){return String(s??"").replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));}
+async function api(path,opts){
+  const r=await fetch(path,opts);
+  if(!r.ok){let t;try{t=(await r.json()).detail}catch(e){t=await r.text()}
+    throw new Error(t||r.status);}
+  return r.json();
+}
+async function post(path,body){
+  return api(path,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:body===undefined?undefined:JSON.stringify(body)});
+}
+
+/* ---------------- websocket ---------------- */
+function openWs(){
+  ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
+  ws.onmessage=e=>{const m=JSON.parse(e.data);handleMsg(m.kind,m.data);};
+  ws.onclose=()=>{setTimeout(openWs,3000);};
+  clearInterval(wsTimer);
+  wsTimer=setInterval(()=>{if(ws.readyState===1)ws.send("ping");},25000);
+}
+function handleMsg(kind,d){
+  if(kind==="snapshot"){state={...state,...d};renderAll();}
+  else if(kind==="connection"){
+    state.connected=d.connected;renderHeader();
+    logLine(d.connected?"radio connected":"radio disconnected");
+    if(d.connected){loadChannels(0);loadBss(0);}
+  }
+  else if(kind==="ht_status"){state.ht_status=d;renderStatus();}
+  else if(kind==="poll"){Object.assign(state,d);renderStatus();}
+  else if(kind==="settings"){state.settings=d;renderSettings();}
+  else if(kind==="bss"){state.bss=d;renderBss();renderLcd();}
+  else if(kind==="channel"){
+    const i=state.channels.findIndex(c=>c.channel_id===d.channel_id);
+    if(i>=0)state.channels[i]=d;else state.channels.push(d);
+    renderChannels();
+    logLine(`channel ${d.channel_id+1} updated (${esc(d.name)||"unnamed"})`);
+  }
+  else if(kind==="aprs"){state.aprs_log.push(d);renderAprsFeed();
+    logLine(`APRS ${d.dir}: ${esc(d.source)} ${d.type}`);}
+  else if(kind==="data_rxd"){logLine("data rx: "+d.hex);}
+  else if(kind==="position"){logLine(`position: ${d.latitude.toFixed(5)}, ${d.longitude.toFixed(5)}`);}
+  else if(kind==="event"){logLine("event "+d.type+(d.hex?" "+d.hex:""));}
+}
+
+/* ---------------- render ---------------- */
+function renderAll(){renderHeader();renderStatus();renderSettings();
+  renderChannels();renderDevInfo();renderBss();renderAprsFeed();renderLcd();}
+
+/* ---------------- virtual screen ---------------- */
+function chOf(i){return state.channels.find(c=>c.channel_id===i);}
+function toneSub(c){
+  if(!c)return"";
+  const r=toneTxt(c.rx_sub_audio),t=toneTxt(c.tx_sub_audio);
+  let s=[];
+  if(r)s.push("R "+r);if(t&&t!==r)s.push("T "+t);
+  s.push((c.bandwidth_wide?"W":"N")+" "+(c.tx_at_max_power?"H":(c.tx_at_med_power?"M":"L")));
+  return s.join("  ");
+}
+function renderLcd(){
+  const st=state.settings,s=state.ht_status,conn=state.connected;
+  const on=conn&&s&&s.is_power_on;
+  // icons
+  $("iPwr").className="lcd-ic"+(on?"":" alert");
+  $("iPwr").textContent=on?"⏻ ON":(conn?"⏻ OFF":"⏻ ---");
+  $("iTx").classList.toggle("hid",!(s&&s.is_in_tx));
+  $("iTx").className="lcd-ic tx"+((s&&s.is_in_tx)?"":" hid");
+  $("iRx").classList.toggle("hid",!(s&&s.is_in_rx));
+  $("iScan").classList.toggle("hid",!(s&&s.is_scan));
+  $("iDw").classList.toggle("hid",!(st&&st.double_channel));
+  if(st&&st.double_channel)$("iDw").textContent="DW·"+(st.double_channel===1?"A":"B");
+  $("iGps").classList.toggle("hid",!(s&&s.is_gps_locked));
+  $("iBt").classList.toggle("hid",!conn);
+  $("iVol").textContent="VOL "+(state.volume??"–");
+  $("iSql").textContent="SQL "+(st?st.squelch_level??"–":"–");
+  const pct=state.battery_pct;
+  $("iBatt").textContent=pct==null?"▯▯▯▯":
+    "▮".repeat(Math.max(1,Math.round(pct/25)))+"▯".repeat(4-Math.max(1,Math.round(pct/25)))+" "+pct+"%";
+  // VFO lines
+  const cur=s?s.curr_ch_id:-1;
+  for(const [vfo,el] of [["a","A"],["b","B"]]){
+    const chId=st?st["channel_"+vfo]:null;
+    const c=chId!=null?chOf(chId):null;
+    const isCur=chId!=null&&chId===cur;
+    $("lcd"+el+"Name").textContent=
+      (chId!=null?("CH"+String(chId+1).padStart(2,"0")+" "):"")+
+      (c?(c.name||""):"");
+    $("lcd"+el+"Freq").textContent=c?mhz(c.rx_freq):"———.————";
+    $("lcd"+el+"Info").textContent=toneSub(c);
+    $("arr"+el).textContent=isCur?"▶":"";
+    const box=$("lcd"+el);
+    box.className="lcd-vfo"+(isCur?" active":"")+
+      (isCur&&s&&s.is_in_tx?" txing":(isCur&&s&&s.is_in_rx?" rxing":""));
+  }
+  // footer
+  let foot=[];
+  if(!conn)foot.push("not connected");
+  else{
+    if(s&&s.rssi>=0)foot.push("RSSI "+"▂▃▄▅▆▇█".slice(0,Math.max(1,Math.ceil(s.rssi/2)))+" "+s.rssi);
+    if(s&&s.curr_region>=0)foot.push("region "+s.curr_region);
+    if(state.battery_voltage)foot.push(state.battery_voltage.toFixed(2)+" V");
+    if(state.bss&&state.bss.aprs_callsign)
+      foot.push(state.bss.aprs_callsign+(state.bss.aprs_ssid?"-"+state.bss.aprs_ssid:""));
+    if(state.transport)foot.push(state.transport.toUpperCase());
+  }
+  $("lcdFoot").innerHTML=foot.map(esc).map(f=>`<span>${f}</span>`).join("");
+}
+function renderHeader(){
+  const c=state.connected;
+  $("bConn").textContent=c?("ONLINE "+(state.transport||"").toUpperCase()):"OFFLINE";
+  $("bConn").className="badge"+(c?" on":"");
+  $("btnRefresh").disabled=!c;$("btnChRefresh").disabled=!c;
+  $("btnDisc").hidden=!c;
+  $("connectCard").style.display=c?"none":"";
+  if(state.mac)$("macInput").value=state.mac;
+}
+function renderStatus(){
+  const s=state.ht_status;
+  $("bPower").hidden=!s;$("bTx").hidden=!(s&&s.is_in_tx);
+  $("bRx").hidden=!(s&&s.is_in_rx);$("bScan").hidden=!(s&&s.is_scan);
+  $("bGps").hidden=!(s&&s.is_gps_locked);
+  if(s){
+    $("bPower").textContent=s.is_power_on?"PWR ON":"PWR OFF";
+    $("bPower").className="badge"+(s.is_power_on?" on":" warn");
+    $("stRssi").textContent=s.rssi>=0?s.rssi+"/15":"–";
+  }
+  $("stBatt").textContent=state.battery_pct!=null?state.battery_pct+"%"
+    :(state.battery_voltage!=null?state.battery_voltage.toFixed(2)+"V":"–");
+  if(state.volume!=null){$("vol").value=state.volume;$("volVal").textContent=state.volume;}
+  renderActive();renderLcd();
+}
+function renderSettings(){
+  const st=state.settings;if(!st)return;
+  $("stChA").textContent=(st.channel_a??0)+1;
+  $("stChB").textContent=(st.channel_b??0)+1;
+  $("sql").value=st.squelch_level??0;$("sqlVal").textContent=st.squelch_level??"–";
+  for(const b of $("dwSeg").children)
+    b.classList.toggle("on",Number(b.dataset.v)===(st.double_channel??0));
+  for(const b of $("scanSeg").children)
+    b.classList.toggle("on",Number(b.dataset.v)===(st.scan??0));
+  renderChannels();renderActive();renderLcd();
+}
+function renderActive(){
+  const st=state.settings,s=state.ht_status;
+  if(!st||!state.channels.length){$("activeChans").textContent="–";return;}
+  const nm=i=>{const c=state.channels.find(x=>x.channel_id===i);
+    return c?`CH${i+1} ${esc(c.name)||mhz(c.rx_freq)}`:"CH"+(i+1);};
+  let html=`<div>A: <b>${nm(st.channel_a??0)}</b></div><div>B: <b>${nm(st.channel_b??0)}</b></div>`;
+  if(s)html+=`<div class="dimtxt" style="font-size:12px">radio on CH${(s.curr_ch_id??0)+1}${s.is_scan?" · scanning":""}</div>`;
+  $("activeChans").innerHTML=html;
+}
+function renderDevInfo(){
+  const d=state.dev_info;if(!d){$("devInfo").textContent="";return;}
+  $("devInfo").textContent=
+    `product ${d.product_id} hw ${d.hw_ver} fw ${d.soft_ver} · `+
+    `${d.channel_count} channels`+(d.support_vfo?" · VFO":"")+
+    (d.support_dmr?" · DMR":"")+(d.support_noaa?" · NOAA":"");
+}
+function flags(c){
+  const f=[];if(c.tx_disable)f.push("TXD");if(c.bclo)f.push("BCLO");
+  if(c.talk_around)f.push("TA");if(c.mute)f.push("MUTE");if(c.rev)f.push("REV");
+  return f.join(",");
+}
+function renderChannels(){
+  const tb=$("chTable").querySelector("tbody");
+  const st=state.settings||{};
+  const cur=state.ht_status?state.ht_status.curr_ch_id:-1;
+  tb.innerHTML="";
+  for(const c of state.channels){
+    const tr=document.createElement("tr");
+    tr.className="ch"+(c.channel_id===st.channel_a?" selA":
+                       c.channel_id===st.channel_b?" selB":"");
+    tr.innerHTML=
+      `<td>${c.channel_id+1}${c.channel_id===cur?" ▶":""}</td>`+
+      `<td class="chname">${esc(c.name)||'<span class="dimtxt">—</span>'}</td>`+
+      `<td>${mhz(c.rx_freq)}</td><td>${mhz(c.tx_freq)}</td>`+
+      `<td class="dimtxt">${["FM","AM","DMR",""][c.rx_mod??0]}</td>`+
+      `<td class="dimtxt">${toneTxt(c.rx_sub_audio)}</td>`+
+      `<td class="dimtxt">${toneTxt(c.tx_sub_audio)}</td>`+
+      `<td class="dimtxt">${c.bandwidth_wide?"W":"N"}</td>`+
+      `<td class="dimtxt">${c.tx_at_max_power?"H":(c.tx_at_med_power?"M":"L")}</td>`+
+      `<td class="dimtxt">${c.scan?"✓":""}</td>`+
+      `<td class="dimtxt" style="font-size:11px">${flags(c)}</td>`+
+      `<td><button class="abbtn${c.channel_id===st.channel_a?" selected":""}"
+           onclick="event.stopPropagation();selectCh('a',${c.channel_id})">A</button>
+         <button class="abbtn${c.channel_id===st.channel_b?" selectedB":""}"
+           onclick="event.stopPropagation();selectCh('b',${c.channel_id})">B</button></td>`;
+    tr.onclick=()=>openEditor(c);
+    tb.appendChild(tr);
+  }
+  $("chEmpty").style.display=state.channels.length?"none":"";
+}
+
+/* ---------------- APRS ---------------- */
+function pktHtml(p){
+  const t=new Date((p.time||0)*1000).toTimeString().slice(0,8);
+  let body="";
+  if(p.type==="message"||p.type==="ack")
+    body=`→ <b>${esc(p.addressee)}</b>: ${esc(p.text)}${p.msg_id?" {"+esc(p.msg_id)+"}":""}`;
+  else if(p.type==="position"||p.type==="object")
+    body=`${p.name?esc(p.name)+" ":""}${p.latitude?.toFixed(5)}, ${p.longitude?.toFixed(5)}`+
+         `${p.comment?" · "+esc(p.comment):""}${p.mic_e?" · Mic-E":""}`;
+  else if(p.type==="status")body=esc(p.text);
+  else body=esc(p.raw||"");
+  return `<div class="aprspkt ${p.dir==="tx"?"tx":""}">
+    <div class="hdr"><span>${esc(p.source)}</span>
+      <span class="pill">${p.dir==="tx"?"sent":esc(p.type)}</span>
+      ${p.path&&p.path.length?`<span class="dimtxt" style="font-weight:400;font-size:11px">via ${esc(p.path.join(","))}</span>`:""}
+      <span class="time">${t}</span></div>
+    <div class="body">${body}</div></div>`;
+}
+function renderAprsFeed(){
+  const feed=$("aprsFeed");
+  const pkts=state.aprs_log.slice(-100).reverse();
+  $("aprsCount").textContent=state.aprs_log.length;
+  feed.innerHTML=pkts.length?pkts.map(pktHtml).join("")
+    :'<div class="dimtxt">No packets yet.</div>';
+}
+function renderBss(){
+  const b=state.bss;if(!b)return;
+  $("bCall").value=b.aprs_callsign||"";
+  $("bSsid").value=b.aprs_ssid??0;
+  $("bSymbol").value=b.aprs_symbol||"/$";
+  $("bPath").value=state.aprs_path||"";
+  $("bFormat").value=b.packet_format??1;
+  $("bMessage").value=b.beacon_message||"";
+  $("bIdInfo").value=b.ptt_release_id_info||"";
+  $("bInterval").value=(b.location_share_interval??0)*10;
+  $("bShareLoc").checked=!!b.should_share_location;
+  $("bPttLoc").checked=!!b.ptt_release_send_location;
+  $("bPttId").checked=!!b.ptt_release_send_id_info;
+  $("bSmart").checked=!!b.smart_beacon_en;
+  $("bMicE").checked=!!b.mic_e_en;
+  $("bPwrV").checked=!!b.send_pwr_voltage;
+  $("bPosChk").checked=!!b.allow_position_check;
+}
+async function loadBss(refresh){
+  if(!state.connected)return;
+  try{
+    state.bss=await api("/api/bss?refresh="+refresh);
+    const p=await api("/api/aprs/path?refresh="+refresh);
+    state.aprs_path=p.path;renderBss();
+  }catch(e){logLine("bss: "+e.message);}
+}
+async function saveBss(){
+  const updates={
+    aprs_callsign:$("bCall").value.toUpperCase().trim(),
+    aprs_ssid:Number($("bSsid").value)||0,
+    aprs_symbol:$("bSymbol").value||"/$",
+    packet_format:Number($("bFormat").value),
+    beacon_message:$("bMessage").value,
+    ptt_release_id_info:$("bIdInfo").value,
+    location_share_interval:Math.round((Number($("bInterval").value)||0)/10),
+    should_share_location:$("bShareLoc").checked?1:0,
+    ptt_release_send_location:$("bPttLoc").checked?1:0,
+    ptt_release_send_id_info:$("bPttId").checked?1:0,
+    smart_beacon_en:$("bSmart").checked?1:0,
+    mic_e_en:$("bMicE").checked?1:0,
+    send_pwr_voltage:$("bPwrV").checked?1:0,
+    allow_position_check:$("bPosChk").checked?1:0,
+  };
+  try{
+    state.bss=await post("/api/bss",{updates});
+    await post("/api/aprs/path",{path:$("bPath").value.toUpperCase().trim()});
+    logLine("APRS config written to radio");
+  }catch(e){alert("write failed: "+e.message);}
+}
+async function sendAprsMsg(){
+  const to=$("msgTo").value.trim(),text=$("msgText").value.trim();
+  if(!to||!text){alert("recipient and text required");return;}
+  try{await post("/api/aprs/message",{to,text});$("msgText").value="";}
+  catch(e){alert("send failed: "+e.message);}
+}
+async function sendBeacon(){
+  const lat=Number($("bcnLat").value),lon=Number($("bcnLon").value);
+  if(!lat&&!lon){alert("enter a position (or Use my location)");return;}
+  try{await post("/api/aprs/beacon",{lat,lon,comment:$("bcnComment").value});}
+  catch(e){alert("beacon failed: "+e.message);}
+}
+function geoFill(){
+  navigator.geolocation.getCurrentPosition(
+    p=>{$("bcnLat").value=p.coords.latitude.toFixed(5);
+        $("bcnLon").value=p.coords.longitude.toFixed(5);},
+    e=>alert("geolocation: "+e.message));
+}
+
+/* ---------------- settings tab ---------------- */
+const SET_MAP=[  // [element id, settings field, kind]
+ ["sMicGain","mic_gain","num"],["sBtMic","bt_mic_gain","num"],
+ ["sSpeaker","local_speaker","num"],["sAlarmVol","alarm_volume","num"],
+ ["sTailElim","tail_elim","bool"],["sNs","ns_en","bool"],
+ ["sDisBtMic","dis_bt_mic","bool"],
+ ["sVoxEn","vox_en","bool"],["sVoxLevel","vox_level","num"],
+ ["sVoxDelay","vox_delay","num"],
+ ["sTxLimit","tx_time_limit","num"],["sTxHold","tx_hold_time","num"],
+ ["sPttLock","ptt_lock","bool"],
+ ["sApo","auto_power_off","num"],["sScreen","screen_timeout","num"],
+ ["sAutoPower","auto_power_on","bool"],["sPowerSave","power_saving_mode","bool"],
+ ["sImperial","imperial_unit","bool"],
+ ["sGnss","positioning_system","num"],["sTimeOff","time_offset","num"],
+ ["sShareCh","auto_share_loc_ch","num"],
+ ["sKiss","kiss_en","bool"],["sKissUp","kiss_upload_tx_msg","bool"],
+ ["sKissDelay","kiss_tx_delay","num"],["sKissTail","kiss_tx_tail","num"],
+];
+function renderSettingsTab(){
+  const st=state.settings;if(!st){$("setRaw").textContent="Not connected / no settings read yet.";return;}
+  for(const [el,fieldName,kind] of SET_MAP){
+    const v=st[fieldName];
+    if(v===undefined)continue;
+    if(kind==="bool")$(el).checked=!!v;else $(el).value=v;
+  }
+  // dis_tone is inverted: checkbox = tones enabled
+  $("sTone").checked=!st.dis_tone;
+  $("setRaw").textContent="";
+}
+async function saveSettingsTab(){
+  const st=state.settings;if(!st){alert("not connected");return;}
+  const updates={};
+  for(const [el,fieldName,kind] of SET_MAP)
+    updates[fieldName]=kind==="bool"?($(el).checked?1:0):Number($(el).value)||0;
+  updates.dis_tone=$("sTone").checked?0:1;
+  try{
+    state.settings=await post("/api/settings",
+      {updates,store:$("sStore").checked});
+    logLine("settings written"+($("sStore").checked?" + stored":""));
+    renderSettings();
+  }catch(e){alert("write failed: "+e.message);}
+}
+
+/* ---------------- actions ---------------- */
+async function connectRadio(){
+  const mac=$("macInput").value.trim();
+  if(!/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(mac)){alert("Enter a MAC address");return;}
+  logLine("connecting to "+mac+" ...");
+  try{
+    const snap=await post("/api/connect",{mac,transport:$("transportSel").value});
+    state={...state,...snap};renderAll();logLine("connected via "+snap.transport);
+    loadChannels(1);
+  }catch(e){logLine("connect failed: "+e.message);}
+}
+async function disconnectRadio(){
+  await post("/api/disconnect");state.connected=false;renderHeader();
+}
+async function scanDevices(){
+  $("btnScan").disabled=true;logLine("scanning for devices (10s) ...");
+  try{
+    const list=await api("/api/scan");
+    const ul=$("scanList");ul.innerHTML="";
+    for(const d of list){
+      const li=document.createElement("li");
+      li.innerHTML=`<span>${esc(d.name)}</span><span class="dimtxt">${d.mac} · ${d.source}</span>`;
+      li.onclick=()=>{$("macInput").value=d.mac;};
+      ul.appendChild(li);
+    }
+    logLine(list.length+" device(s) found");
+  }catch(e){logLine("scan failed: "+e.message);}
+  $("btnScan").disabled=false;
+}
+async function loadChannels(refresh){
+  try{
+    state.channels=await api("/api/channels?refresh="+refresh);
+    renderChannels();renderActive();renderLcd();
+    logLine(state.channels.length+" channels loaded");
+  }catch(e){logLine("channels: "+e.message);}
+}
+async function selectCh(vfo,ch){
+  try{
+    await post("/api/select",{vfo,channel:ch});
+    if(!state.settings)state.settings={};
+    state.settings[vfo==="a"?"channel_a":"channel_b"]=ch;
+    renderSettings();logLine("VFO "+vfo.toUpperCase()+" → CH "+(ch+1));
+  }catch(e){logLine("select: "+e.message);}
+}
+async function setVolume(v){
+  $("volVal").textContent=v;
+  try{await post("/api/volume/"+v);}catch(e){logLine("volume: "+e.message);}
+}
+async function setSquelch(v){
+  $("sqlVal").textContent=v;
+  try{await post("/api/settings",{updates:{squelch_level:Number(v)}});}
+  catch(e){logLine("squelch: "+e.message);}
+}
+async function powerRadio(on){
+  try{await post("/api/power/"+on);logLine("power "+(on?"on":"off")+" sent");}
+  catch(e){logLine("power: "+e.message);}
+}
+$("dwSeg").addEventListener("click",async e=>{
+  if(e.target.dataset.v===undefined)return;
+  try{await post("/api/settings",{updates:{double_channel:Number(e.target.dataset.v)}});
+    state.settings.double_channel=Number(e.target.dataset.v);renderSettings();}
+  catch(err){logLine("dual watch: "+err.message);}
+});
+$("scanSeg").addEventListener("click",async e=>{
+  if(e.target.dataset.v===undefined)return;
+  try{await post("/api/settings",{updates:{scan:Number(e.target.dataset.v)}});
+    state.settings.scan=Number(e.target.dataset.v);renderSettings();}
+  catch(err){logLine("scan: "+err.message);}
+});
+async function getPosition(){
+  try{const p=await api("/api/position");
+    logLine(`GPS: ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}`+
+      (p.altitude!=null?` alt ${p.altitude}m`:""));}
+  catch(e){logLine("position: "+e.message);}
+}
+async function refresh(){
+  try{const snap=await post("/api/refresh");state={...state,...snap};renderAll();}
+  catch(e){logLine("refresh: "+e.message);}
+}
+
+/* ---------------- channel editor ---------------- */
+const chDlg=$("chDlg");
+function toneOptions(sel,current){
+  let html='<option value="0">Off</option>';
+  for(const t of CTCSS){
+    const v=Math.round(t*100);
+    html+=`<option value="${v}"${v===current?" selected":""}>${t.toFixed(1)} Hz</option>`;
+  }
+  if(current&&current<6700)
+    html+=`<option value="${current}" selected>DCS ${current}</option>`;
+  sel.innerHTML=html;
+}
+function openEditor(c){
+  editingCh=c;
+  $("chDlgTitle").textContent=`Channel ${c.channel_id+1}`;
+  $("eName").value=c.name||"";
+  $("eMode").value=c.rx_mod??0;
+  $("eRx").value=c.rx_freq/1e6;$("eTx").value=c.tx_freq/1e6;
+  toneOptions($("eRxT"),c.rx_sub_audio);toneOptions($("eTxT"),c.tx_sub_audio);
+  $("eBw").value=String(!!c.bandwidth_wide);
+  $("ePow").value=c.tx_at_max_power?"max":(c.tx_at_med_power?"med":"low");
+  $("eScan").checked=!!c.scan;$("eTxDis").checked=!!c.tx_disable;
+  $("eBclo").checked=!!c.bclo;$("eTalk").checked=!!c.talk_around;
+  $("eMute").checked=!!c.mute;$("eRev").checked=!!c.rev;
+  chDlg.showModal();
+}
+async function saveChannel(){
+  const p=$("ePow").value,mode=Number($("eMode").value);
+  const body={
+    name:$("eName").value,
+    rx_freq:Math.round(Number($("eRx").value)*1e6),
+    tx_freq:Math.round(Number($("eTx").value)*1e6),
+    rx_mod:mode,tx_mod:mode,
+    rx_sub_audio:Number($("eRxT").value)||0,
+    tx_sub_audio:Number($("eTxT").value)||0,
+    bandwidth_wide:$("eBw").value==="true",
+    scan:$("eScan").checked,tx_disable:$("eTxDis").checked,
+    tx_at_max_power:p==="max",tx_at_med_power:p==="med",
+    bclo:$("eBclo").checked,talk_around:$("eTalk").checked,
+    mute:$("eMute").checked,rev:$("eRev").checked,
+  };
+  try{
+    await post("/api/channel/"+editingCh.channel_id,body);
+    chDlg.close();logLine("channel "+(editingCh.channel_id+1)+" written");
+  }catch(e){alert("write failed: "+e.message);}
+}
+
+openWs();
+</script>
+</body>
+</html>

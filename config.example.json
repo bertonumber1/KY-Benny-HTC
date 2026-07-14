@@ -1,0 +1,8 @@
+{
+  "mac": "AA:BB:CC:DD:EE:FF",
+  "transport": "auto",
+  "rfcomm_channel": null,
+  "port": 8084,
+  "auto_connect": true,
+  "status_poll_seconds": 30
+}

@@ -1,0 +1,13 @@
+[Unit]
+Description=VR-N7600 web remote (Bluetooth to IP bridge)
+After=network-online.target bluetooth.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ais-adsb/vrn7600-webui
+ExecStart=/usr/bin/python3 /home/ais-adsb/vrn7600-webui/app.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
