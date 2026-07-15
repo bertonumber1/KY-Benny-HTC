@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VR-N7600 Remote</title>
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<script src="/static/vendor/leaflet/leaflet.js"></script>
 <style>
 :root{
   --bg:#0b1017; --panel:#121a26; --panel2:#182333; --line:#233247;
@@ -262,6 +264,13 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 
 <!-- ======================= APRS ======================= -->
 <div class="tab" id="tab-aprs">
+  <div class="card">
+    <h2>Map <span class="pill" id="aprsMapCount">0</span>
+      <button style="float:right;padding:2px 8px;font-size:11px" onclick="fitAprsMap()">fit stations</button></h2>
+    <div id="aprsMap" style="height:380px;border-radius:8px;overflow:hidden;background:var(--panel2)"></div>
+    <div class="dimtxt" style="font-size:11px;margin-top:6px">
+      Open map data © OpenStreetMap contributors. Received stations shown in green, your beacons in amber.</div>
+  </div>
   <div class="cols3">
     <div>
       <div class="card">
@@ -322,8 +331,11 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 <!-- ======================= SETTINGS ======================= -->
 <div class="tab" id="tab-settings">
   <div class="card">
-    <h2>Radio settings <button style="float:right;padding:2px 8px;font-size:11px"
-        onclick="renderSettingsTab()">reload</button></h2>
+    <h2>Radio settings
+        <button class="acc" style="float:right" onclick="getSettingsFromRadio()"
+          title="Read the current settings live from the radio">GET from radio</button>
+        <button style="float:right;padding:2px 8px;font-size:11px;margin-right:6px"
+          onclick="renderSettingsTab()" title="Re-fill the form from the last read (no radio access)">redraw</button></h2>
     <form id="setForm" onsubmit="return false">
       <div class="cols">
         <div>
@@ -387,9 +399,19 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
           </fieldset>
         </div>
       </div>
-      <div class="row" style="justify-content:flex-end">
-        <label class="check" style="min-width:0"><input type="checkbox" id="sStore"> persist to flash</label>
-        <button class="acc" onclick="saveSettingsTab()">Write to radio</button>
+      <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <div class="row" style="gap:6px">
+          <button type="button" onclick="exportSettings()"
+            title="Download the current form settings as a JSON profile">Export…</button>
+          <button type="button" onclick="$('setImportFile').click()"
+            title="Load a settings profile from a JSON file into the form">Import…</button>
+          <input type="file" id="setImportFile" accept="application/json,.json"
+            style="display:none" onchange="importSettings(this.files[0]);this.value=''">
+        </div>
+        <div class="row" style="gap:6px;align-items:center">
+          <label class="check" style="min-width:0"><input type="checkbox" id="sStore"> persist to flash</label>
+          <button class="acc" onclick="saveSettingsTab()">Write to radio</button>
+        </div>
       </div>
     </form>
     <div class="dimtxt" id="setRaw" style="font-size:11px;margin-top:8px"></div>
@@ -454,6 +476,7 @@ $("tabs").addEventListener("click",e=>{
   for(const d of document.querySelectorAll(".tab"))
     d.classList.toggle("on",d.id==="tab-"+t);
   if(t==="aprs"&&state.connected&&!state.bss)loadBss(0);
+  if(t==="aprs")setTimeout(()=>{initAprsMap();updateAprsMap();},0);
   if(t==="settings")renderSettingsTab();
 });
 
@@ -684,6 +707,74 @@ function renderAprsFeed(){
   $("aprsCount").textContent=state.aprs_log.length;
   feed.innerHTML=pkts.length?pkts.map(pktHtml).join("")
     :'<div class="dimtxt">No packets yet.</div>';
+  updateAprsMap();
+}
+
+/* ---------------- APRS map (Leaflet + open-source tiles) ---------------- */
+let aprsMap=null, aprsLayer=null, aprsMarkers={};
+function initAprsMap(){
+  if(aprsMap||typeof L==="undefined")return;
+  const el=$("aprsMap");if(!el)return;
+  aprsMap=L.map(el,{zoomControl:true,attributionControl:true})
+    .setView([54.5,-4],5);   // UK-ish default; re-centres to stations
+  // open-source / no-key tile layers
+  const osm=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {maxZoom:19,attribution:"© OpenStreetMap contributors"});
+  const dark=L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    {maxZoom:20,subdomains:"abcd",
+     attribution:"© OpenStreetMap contributors © CARTO"});
+  const topo=L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    {maxZoom:17,attribution:"© OpenStreetMap contributors, SRTM · OpenTopoMap (CC-BY-SA)"});
+  const hot=L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+    {maxZoom:19,attribution:"© OpenStreetMap contributors · Humanitarian OSM Team"});
+  dark.addTo(aprsMap);   // default matches the dark UI
+  L.control.layers(
+    {"Carto Dark":dark,"OpenStreetMap":osm,"OpenTopoMap":topo,"Humanitarian":hot},
+    null,{collapsed:true}).addTo(aprsMap);
+  aprsLayer=L.layerGroup().addTo(aprsMap);
+  setTimeout(()=>aprsMap.invalidateSize(),100);
+}
+function stationsFromLog(){
+  // latest position per callsign
+  const byCall={};
+  for(const p of state.aprs_log){
+    if((p.type==="position"||p.type==="object")&&
+        typeof p.latitude==="number"&&typeof p.longitude==="number"){
+      const key=(p.name||p.source||"?")+"|"+(p.dir||"rx");
+      byCall[key]=p;
+    }
+  }
+  return Object.values(byCall);
+}
+function updateAprsMap(){
+  if(!aprsMap||!aprsLayer)return;
+  aprsLayer.clearLayers();
+  const sts=stationsFromLog();
+  $("aprsMapCount").textContent=sts.length;
+  const pts=[];
+  for(const p of sts){
+    const tx=p.dir==="tx";
+    const m=L.circleMarker([p.latitude,p.longitude],{
+      radius:6,weight:2,color:tx?"#fbbf24":"#4ade80",
+      fillColor:tx?"#fbbf24":"#4ade80",fillOpacity:0.6});
+    const t=new Date((p.time||0)*1000).toTimeString().slice(0,8);
+    m.bindPopup(`<b>${esc(p.name||p.source||"?")}</b>`+
+      (p.comment?"<br>"+esc(p.comment):"")+
+      `<br>${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}`+
+      `<br><span style="color:#888">${tx?"beacon (tx)":"received"} · ${t}</span>`);
+    m.addTo(aprsLayer);
+    pts.push([p.latitude,p.longitude]);
+  }
+  if(pts.length&&!aprsMap._fittedOnce){
+    aprsMap.fitBounds(pts,{padding:[30,30],maxZoom:12});
+    aprsMap._fittedOnce=true;
+  }
+}
+function fitAprsMap(){
+  if(!aprsMap)return;
+  const pts=stationsFromLog().map(p=>[p.latitude,p.longitude]);
+  if(pts.length)aprsMap.fitBounds(pts,{padding:[30,30],maxZoom:13});
 }
 function renderBss(){
   const b=state.bss;if(!b)return;
@@ -781,6 +872,62 @@ function renderSettingsTab(){
   // dis_tone is inverted: checkbox = tones enabled
   $("sTone").checked=!st.dis_tone;
   $("setRaw").textContent="";
+}
+function collectSettingsForm(){
+  // gather the editable settings fields from the form (what the user sees)
+  const out={};
+  for(const [el,fieldName,kind] of SET_MAP)
+    out[fieldName]=kind==="bool"?($(el).checked?1:0):Number($(el).value)||0;
+  out.dis_tone=$("sTone").checked?0:1;
+  return out;
+}
+function exportSettings(){
+  const fields=collectSettingsForm();
+  const doc={_type:"vrn7600-settings",_version:1,
+    _exported:new Date().toISOString(),
+    mac:(state.mac||config_mac()||null),fields};
+  const blob=new Blob([JSON.stringify(doc,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download="vrn7600-settings-"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".json";
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  logLine("settings exported ("+Object.keys(fields).length+" fields)");
+}
+function config_mac(){return document.getElementById("macInput")?.value||null;}
+function importSettings(file){
+  if(!file)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    let doc;
+    try{doc=JSON.parse(r.result);}
+    catch(e){alert("Import failed: not valid JSON");return;}
+    const fields=doc&&doc.fields?doc.fields:doc; // accept {fields:{}} or a bare map
+    if(!fields||typeof fields!=="object"){alert("Import failed: no settings found");return;}
+    const known=new Set(SET_MAP.map(x=>x[1]).concat("dis_tone"));
+    let applied=0,skipped=[];
+    state.settings=Object.assign({},state.settings||{});
+    for(const [k,v] of Object.entries(fields)){
+      if(known.has(k)){state.settings[k]=v;applied++;}else skipped.push(k);
+    }
+    renderSettingsTab();
+    logLine("settings imported: "+applied+" field(s) loaded into form"
+      +(skipped.length?", "+skipped.length+" ignored ("+skipped.slice(0,4).join(",")+(skipped.length>4?"…":"")+")":"")
+      +" — review, then 'Write to radio'");
+    if(!state.connected)$("setRaw").textContent=
+      "Imported into the form. Connect to the radio, then 'Write to radio' to apply.";
+  };
+  r.onerror=()=>alert("Import failed: could not read file");
+  r.readAsText(file);
+}
+async function getSettingsFromRadio(){
+  logLine("reading settings from radio ...");
+  try{
+    state.settings=await api("/api/settings?refresh=1");
+    renderSettingsTab();renderSettings();
+    logLine("settings read from radio ("+Object.keys(state.settings).length+" fields)");
+  }catch(e){alert("read failed: "+e.message);logLine("settings read failed: "+e.message);}
 }
 async function saveSettingsTab(){
   const st=state.settings;if(!st){alert("not connected");return;}

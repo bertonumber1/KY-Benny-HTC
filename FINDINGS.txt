@@ -1,0 +1,231 @@
+========================================================================
+ VR-N7600 WEB UI — PROTOCOL & METHOD FINDINGS
+ Working log. Append as we learn. Times are local (host clock).
+========================================================================
+
+Radio under test : VR-N7600 (Benshi / Vero / BTECH UV-Pro family)
+BT address       : 38:D2:00:01:3E:CC
+Host             : Windows 10, Intel Wireless Bluetooth
+Goal             : full control + voice from a browser, no vendor phone app.
+
+------------------------------------------------------------------------
+1. HOW THE RADIO EXPOSES ITSELF OVER BLUETOOTH  (Windows PnP enumeration)
+------------------------------------------------------------------------
+The radio pairs to Windows and presents THREE distinct channels:
+
+  (a) BLE GATT — Benshi service 00001100-d102-11e1-9b23-00025b00a5a5
+        write char    00001101-...-a5a5   (commands OUT)
+        indicate char 00001102-...-a5a5   (replies / events IN)
+      Enumerated as BTHLEDEVICE\{00001100-...}_38D200013ECC.
+
+  (b) Classic RFCOMM / GAIA SPP — service UUID 00001101 (SPP)
+        Exposed by Windows as a serial port: "Standard Serial over
+        Bluetooth link (COM5)".  <-- THE WORKING CONTROL PATH ON WINDOWS.
+        Enumerated as BTHENUM\{00001101-...}_..._38D200013ECC.
+
+  (c) Hands-Free Profile — service UUID 0000111F
+        "VR-N7600 Hands-Free HF".  <-- the classic-BT VOICE audio path.
+
+Same command set rides both (a) BLE and (b) RFCOMM; only the framing
+differs (see section 3).
+
+------------------------------------------------------------------------
+2. WHAT WORKS / WHAT DOES NOT  (on Windows)
+------------------------------------------------------------------------
+  BLE GATT (bleak):   WORKS once the radio is awake & the bond is live
+                      (2026-07-15: connected "ONLINE BLE", read full
+                      settings block, live GET/edit/write verified).
+                      EARLIER FAILURE (kept for reference): right after
+                      pairing / while the radio was asleep it returned
+                        "GATT Protocol Error: Insufficient Authentication"
+                      or "Characteristic 00001102-... was not found" — a
+                      bonded-device timing issue on Windows, not a dead end.
+                      Retry once the radio is awake/in range.
+
+  RFCOMM via AF_BLUETOOTH socket (radio.py original path):
+                      fails — "expected tuple of length 2 or 4" and
+                      "sdptool failed" (AF_BLUETOOTH + sdptool are
+                      Linux-only; do not exist on Windows).
+
+  RFCOMM / GAIA over COM5 (pyserial):   *** WORKS ***
+                      Opening COM5 at 115200 and speaking GAIA frames
+                      gets clean replies from the radio. This is the
+                      transport the Windows web UI should use.
+
+  PROVEN 2026-07-15: sent GET_DEV_INFO + GET_HT_STATUS over COM5, got:
+     raw: ff 01 00 05 00 02 80 04 00 00 01 00 92
+          ff 01 00 05 00 02 80 14 00 80 01 00 00
+     decoded:
+          group=2 GET_DEV_INFO +REPLY  payload=00 00 01 00 92  (status 00 OK)
+          group=2 GET_HT_STATUS+REPLY  payload=00 80 01 00 00  (status 00 OK)
+
+------------------------------------------------------------------------
+3. FRAME FORMATS  (from benshi.py, confirmed on the wire)
+------------------------------------------------------------------------
+Command groups:   BASIC = 2 (0x0002),  EXTENDED = 10 (0x000A)
+Reply bit:        command id | 0x8000  marks a reply.
+Events:           group=BASIC, cmd=EVENT_NOTIFICATION(9), no reply bit,
+                  payload[0] = event type.
+Reply payloads:   payload[0] is a STATUS byte (0x00 = OK).
+All bitfields are MSB-first big-endian.
+
+  BLE GATT frame (write to ...1101, indicated on ...1102):
+        [group:u16be][cmd:u16be][payload...]
+
+  RFCOMM / GAIA frame (COM5 serial):
+        [0xFF][0x01][flags][len(payload)][group:u16be][cmd:u16be][payload]
+        (+1 trailing XOR checksum byte if flags bit0 set; we send flags=0)
+      Incremental parse: resync to 0xFF, need >=8 bytes, total =
+        8 + payload_len + (1 if flags&1).
+
+------------------------------------------------------------------------
+4. COMMAND SET  (Cmd enum, benshi.py — id : name)
+------------------------------------------------------------------------
+Key ones for the UI tabs:
+   4  GET_DEV_INFO        20 GET_HT_STATUS       22 GET_VOLUME/23 SET_VOLUME
+  10  READ_SETTINGS       11 WRITE_SETTINGS      12 STORE_SETTINGS(->flash)
+  13  READ_RF_CH          14 WRITE_RF_CH         (channel memory)
+  33  READ_BSS_SETTINGS   34 WRITE_BSS_SETTINGS  (APRS/beacon)
+  29/30 READ/WRITE_ADVANCED_SETTINGS   63/64 ..._SETTINGS2
+   6  REGISTER_NOTIFICATION  9 EVENT_NOTIFICATION  76 GET_POSITION
+  21  SET_HT_ON_OFF       31 HT_SEND_DATA (TNC/APRS out)  57 RX_DATA
+(Full list: run `python btdebug.py` and use `names` at the REPL, or see
+ the Cmd enum at the top of benshi.py.)
+
+------------------------------------------------------------------------
+5. TOOLS / METHODS WE BUILT
+------------------------------------------------------------------------
+  btdebug.py  — Bluetooth sniffer/debugger. Reuses benshi.py framing so it
+                stays in sync with the app. Modes:
+                  scan            list BLE devices + RSSI
+                  gatt  <MAC>     dump GATT service/characteristic tree
+                  monitor <MAC>   BLE: live-decode + inject commands
+                  gaia  <COMx>    classic RFCOMM/GAIA over SPP serial (Windows)
+                Captures every frame to captures/ (see section 6).
+
+  Decompiled vendor app kept at sources/com/benshikj/  (rest binned).
+  The app talks gRPC/protobuf internally — see sources/com/benshikj/ht/rpc/
+  (APPGrpc.java, DeviceManagementGrpc.java, App.java) for the authoritative
+  command/field semantics to mirror in the web UI.
+
+------------------------------------------------------------------------
+6. CAPTURE FILES
+------------------------------------------------------------------------
+  captures/<timestamp>.log    human-readable frame-by-frame trace
+  captures/<timestamp>.jsonl  one JSON record per frame (for analysis)
+  captures/catalog.jsonl      de-duplicated catalog of every (group,cmd)
+                              seen, with an example payload + direction —
+                              i.e. "what the radio asks for and gives us",
+                              the raw material for building UI tabs/settings.
+
+------------------------------------------------------------------------
+6b. COM5 / OUTGOING SPP LINK BEHAVIOUR  (operational)
+------------------------------------------------------------------------
+COM5 is an *outgoing* SPP port: the RFCOMM link to the radio is established
+on demand when the port is OPENED, and torn down when closed / when the
+radio's classic-BT link drops. Consequences:
+  - First open after the radio's link is active  -> works (proven, sec 2).
+  - Later opens can fail even though Windows still lists the device "OK":
+        OSError 1256 "The remote system is not available"
+        OSError 1167 "The device is not connected"
+    "OK" in Get-PnpDevice = bond is healthy, NOT that a live link exists.
+  - Failure causes seen: radio asleep / out of range; the radio's single
+    classic-BT slot already taken (e.g. it re-connected to the Pi, which
+    also auto-connects); or a stale handle not yet released.
+  - To get a live capture: radio awake + in range + NOT connected elsewhere
+    (disconnect it from the Pi's webui first), then open COM5.
+Windows also exposes COM4 = incoming SPP (LOCALMFG, not the radio) — use
+COM5 (the ..._38D200013ECC node) for the radio.
+
+------------------------------------------------------------------------
+6c. SETTINGS READ / EDIT / WRITE PATTERN  (template for every tab)
+------------------------------------------------------------------------
+The clean cycle for any editable block is GET -> edit -> WRITE (-> STORE):
+  GET   : READ_SETTINGS(10)  -> radio returns the full settings struct;
+          parse to fields.  (Also READ_RF_CH 13, READ_BSS_SETTINGS 33,
+          GET_APRS_PATH 72 for the other tabs.)
+  WRITE : WRITE_SETTINGS(11) with the full struct back (edited fields
+          merged over the last-read struct — you must send the WHOLE block,
+          not just the delta).
+  STORE : STORE_SETTINGS(12) to persist to flash (optional; without it the
+          change is live but lost on power-cycle).
+Implemented in the webui:
+  radio.py  read_settings()  -> READ_SETTINGS, emits "settings"
+            write_settings(updates, store) -> merge + WRITE_SETTINGS (+STORE)
+  app.py    GET  /api/settings?refresh=1  -> live read from radio
+            POST /api/settings {updates, store} -> write back
+  index.html Settings tab: "GET from radio" (live read, fills form) and
+            "Write to radio" ("persist to flash" checkbox = STORE).
+  NOTE: the old "reload" button only re-rendered CACHED state (no radio
+  access) — replaced with a true "GET from radio". Keep this distinction
+  for the other tabs (redraw-from-cache vs read-from-radio).
+
+  IMPORT / EXPORT (client-side settings profiles):
+    Export…  -> downloads the current form as JSON:
+                {_type:"vrn7600-settings",_version:1,_exported,mac,fields{}}
+    Import…  -> loads a JSON profile into the form; accepts {fields:{}} or a
+                bare field map; validates against known fields (unknown keys
+                ignored); does NOT auto-write — user reviews then
+                "Write to radio". Round-trip verified 2026-07-15.
+    Use this to clone a radio's config, back it up, or share known-good
+    profiles. Same pattern will extend to channel lists / APRS config.
+
+------------------------------------------------------------------------
+6d. HOW TO CAPTURE "ALL THE COMMANDS"  (two distinct modes)
+------------------------------------------------------------------------
+The radio accepts ONE connection per transport at a time. You cannot see
+another client's traffic just by connecting yourself — connecting is an
+ACTIVE session where YOU issue the commands. So there are two modes, and
+they are mutually exclusive on one radio:
+
+  MODE 1 — ACTIVE PROBE (our tool holds the link).
+     btdebug.py connects (BLE monitor <MAC>, or gaia COM5) and we walk the
+     command set ourselves; every request/reply is logged + cataloged.
+     Requirement: the phone/vendor app and any other client are DISCONNECTED.
+     Good for: systematically enumerating what each command returns.
+
+  MODE 2 — PASSIVE HCI SNIFF (vendor app drives, we log the radio traffic).
+     Run the real vendor app against the radio while capturing the host's
+     Bluetooth HCI stream, then analyse the log offline. This captures the
+     EXACT command sequences/payloads the official app uses — the best
+     source for building UI tabs.
+       - Windows: enable HCI logging (btsnoop) / Bluetooth Internal Logger,
+         or use a USB BT sniffer; open the btsnoop log after.
+       - Linux (the Pi): `sudo btmon -w capture.btsnoop` while the app runs.
+     Good for: real-world flows, defaults, edge cases we'd never guess.
+
+  NOTE (2026-07-15): intermittent COM5 "remote system not available" was
+  contention — the operator was connecting/disconnecting on Windows at the
+  same time as our tools, so we kept bumping each other off the one radio.
+  Coordinate: either WE hold it (mode 1) or the app holds it WITH an HCI
+  capture running (mode 2). Connecting yourself with no capture shows us
+  nothing.
+
+------------------------------------------------------------------------
+6e. APRS MAP  (webui)
+------------------------------------------------------------------------
+APRS tab now has a live map (roadmap item "APRS map view" — done).
+  - Leaflet 1.9.4 vendored locally at static/vendor/leaflet/ (js/css/images)
+    so it works offline / on the Pi with no CDN dependency.
+  - Requires a StaticFiles mount: app.py now does
+      app.mount("/static", StaticFiles(directory=BASE/"static"))
+  - Open-source, no-API-key tile layers, switchable via layer control:
+      Carto Dark (default, matches UI) / OpenStreetMap / OpenTopoMap /
+      Humanitarian OSM.  Tiles fetched at runtime (needs internet); Leaflet
+      itself is local.
+  - Stations plotted from state.aprs_log position/object packets: green =
+    received, amber = our beacons (tx). Latest position per callsign.
+    "fit stations" button + auto-fit on first data. Verified with test data.
+
+------------------------------------------------------------------------
+7. OPEN QUESTIONS / TODO
+------------------------------------------------------------------------
+  [ ] Add a SerialTransport(COM5) to radio.py so the web UI itself connects
+      on Windows (bypass AF_BLUETOOTH). Proven path from section 2.
+  [ ] Decode GET_DEV_INFO / GET_HT_STATUS payload bitfields vs benshi.py
+      structs; confirm channel_count etc. from real replies.
+  [ ] Map READ_SETTINGS / READ_BSS_SETTINGS payloads to Settings/UI fields.
+  [ ] Voice: Hands-Free Profile (0000111F) audio in/out; how PTT keys TX.
+  [ ] Resolve BLE bonded-GATT auth on Windows (alternative to COM5) if we
+      want a serial-port-free path.
+========================================================================

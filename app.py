@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import benshi as bp
@@ -118,6 +119,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="VR-N7600 Remote", lifespan=lifespan)
+
+
+app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 
 @app.get("/")
@@ -241,6 +245,20 @@ async def api_select(body: SelectBody):
 class SettingsBody(BaseModel):
     updates: dict
     store: bool = False
+
+
+@app.get("/api/settings")
+async def api_get_settings(refresh: int = 1):
+    """Read the current settings block from the radio (fresh GET)."""
+    require_connected()
+    if refresh or radio.settings is None:
+        try:
+            await radio.read_settings()
+        except bp.CommandFailed as e:
+            raise HTTPException(502, str(e))
+    fields = radio.settings.fields if radio.settings else {}
+    await broadcast("settings", fields)
+    return fields
 
 
 @app.post("/api/settings")

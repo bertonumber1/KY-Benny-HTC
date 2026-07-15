@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 *.log
 nohup.out
+.venv/
+captures/
+# decompiled vendor app — kept locally for RE reference, NOT redistributed
+sources/

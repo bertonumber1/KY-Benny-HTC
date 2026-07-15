@@ -379,6 +379,13 @@ class Radio:
         self.channels[ch.channel_id] = ch
         await self._command(Cmd.STORE_SETTINGS, expect_reply=False)
 
+    async def read_settings(self) -> dict:
+        """Re-read the live settings block from the radio (READ_SETTINGS)."""
+        self.settings = Settings.parse(
+            await self._command(Cmd.READ_SETTINGS), 1)
+        self._emit("settings", self.settings.fields)
+        return self.settings.fields
+
     async def write_settings(self, updates: dict, store: bool = False):
         if self.settings is None:
             self.settings = Settings.parse(
