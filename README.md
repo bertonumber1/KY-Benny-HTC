@@ -92,14 +92,34 @@ Bluetooth-only; this bridge is what puts it on the network.
 
 ## Run
 
+**From source** (any platform):
+
 ```
+pip install -r requirements.txt
 python app.py             # serves http://<bridge-machine>:8099
+python launcher.py        # same, but opens its own window
 ```
 
-Windows (current dev platform): a venv with `fastapi uvicorn bleak pyserial
-sounddevice numpy websockets` plus **ffmpeg** on the PATH for voice.
-Linux/Pi: control + APRS work; the AOC voice bridge port is on the roadmap.
-A `vrn7600.service` unit is included for systemd installs.
+**Desktop executable** (no Python needed): grab a release binary —
+`windows-x64`, `linux-amd64` or `linux-arm64` (Pi 4/5 class) — or build
+your own with `pip install pyinstaller pywebview && python build.py`.
+Config, log and APRS history live next to the executable.
+
+**Docker** (linux/amd64 + linux/arm64 images on GHCR):
+
+```
+docker compose up -d      # see docker-compose.yml
+```
+
+Bluetooth comes from the host, so the container runs with host networking,
+`privileged` and the host D-Bus socket mounted (all set in the compose
+file). Config and history persist in `./data/`.
+
+Platform notes: **voice (AOC audio) is Windows-only for now** — it uses
+WinRT; on Linux/Docker everything else (control, channels, settings, APRS,
+propagation) works and voice reports "bridge unavailable". ffmpeg on the
+PATH (or next to the exe) is needed for voice on Windows. A
+`vrn7600.service` unit is included for systemd installs from source.
 
 ## First connect
 
@@ -117,6 +137,8 @@ A `vrn7600.service` unit is included for systemd installs.
 - [x] Voice TX/RX over IP via the AOC audio channel (Windows bridge)
 - [x] APRS decode/send + map
 - [x] Propagation analytics (PropView-style) — **fresh, still being tuned**
+- [x] Packaging: single-file executables (Windows/Linux amd64+arm64) and
+      multi-arch Docker images via CI — **fresh, lightly tested**
 - [ ] Linux/Pi port of the voice bridge
 - [ ] DTMF keypad, VOX from browser, AudioWorklet migration
 - [ ] Opus/WebRTC for low-bandwidth remote links

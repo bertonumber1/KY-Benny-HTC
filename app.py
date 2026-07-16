@@ -24,6 +24,7 @@ import benshi as bp
 import prop
 from radio import AprsRadio, scan_devices
 
+import os
 import sys
 if getattr(sys, "frozen", False):
     # packaged (PyInstaller): static files are unpacked to _MEIPASS (read-only);
@@ -33,6 +34,10 @@ if getattr(sys, "frozen", False):
 else:
     BASE = pathlib.Path(__file__).parent
     DATA_DIR = BASE
+if os.environ.get("VRN7600_DATA"):
+    # explicit data dir (Docker: mount a volume here for config + history)
+    DATA_DIR = pathlib.Path(os.environ["VRN7600_DATA"])
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = DATA_DIR / "config.json"
 
 _LOG_FMT = "%(asctime)s %(name)s %(levelname)s %(message)s"

@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+build
+dist
+docs
+captures
+sources
+config.json
+aprs_history.jsonl
+*.log
+*.spec

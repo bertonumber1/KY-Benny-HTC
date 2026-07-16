@@ -1,0 +1,18 @@
+# VR-N7600 web bridge.
+#
+#   docker compose up -d          # uses the prebuilt GHCR image
+#   docker compose up -d --build  # or build locally
+#
+# Bluetooth needs host access, hence host networking + privileged + the
+# host D-Bus socket. The web UI then listens on host port 8099 (change
+# "port" in ./data/config.json).
+services:
+  vrn7600:
+    image: ghcr.io/bertonumber1/ky-benny-htc:latest
+    build: .
+    network_mode: host        # web UI + BlueZ both live on the host net/dbus
+    privileged: true          # AF_BLUETOOTH sockets for classic RFCOMM
+    volumes:
+      - /var/run/dbus:/var/run/dbus   # BlueZ (BLE via bleak)
+      - ./data:/data                  # config.json, APRS history, log
+    restart: unless-stopped

@@ -1,0 +1,7 @@
+# Runtime dependencies. On Windows, bleak pulls the winrt-* packages it
+# needs automatically; those also power the AOC voice bridge (audio.py).
+fastapi>=0.139
+uvicorn>=0.51
+websockets>=16
+bleak>=3.0
+pyserial>=3.5
