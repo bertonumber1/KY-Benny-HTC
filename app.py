@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 import audio
 import benshi as bp
+import prop
 from radio import AprsRadio, scan_devices
 
 logging.basicConfig(level=logging.INFO,
@@ -49,6 +50,8 @@ DEFAULT_CONFIG = {
     "rf_poll_seconds": 2,      # fast HT-status poll for the live S-meter
     "access_token": "",        # set non-empty to require a token on /api + /ws
                                # (do this before port-forwarding for remote use)
+    "station_lat": None,       # home QTH for propagation analytics (distance/
+    "station_lon": None,       # bearing); auto-updated by each sent beacon
 }
 
 
@@ -83,7 +86,21 @@ async def broadcast(kind: str, data):
         ws_clients.discard(ws)
 
 
-radio.event_cb = broadcast
+# PropView-style propagation analytics: every decoded APRS report also goes
+# into a persistent rolling history (the radio is our TNC).
+prop_store = prop.PropStore(DATA_DIR / "aprs_history.jsonl")
+
+
+async def on_radio_event(kind: str, data):
+    if kind == "aprs":
+        try:
+            prop_store.add(data)
+        except Exception as e:                    # noqa: BLE001
+            log.warning("prop store: %s", e)
+    await broadcast(kind, data)
+
+
+radio.event_cb = on_radio_event
 
 # ---- voice bridge (AOC RFCOMM SBC <-> browser) --------------------------
 bridge = audio.AudioBridge(ffmpeg=config.get("ffmpeg_path"))
@@ -622,10 +639,14 @@ class AprsBeaconBody(BaseModel):
 async def api_aprs_beacon(body: AprsBeaconBody):
     require_connected()
     try:
-        return await radio.send_aprs_beacon(body.lat, body.lon, body.comment,
-                                            body.channel_id)
+        report = await radio.send_aprs_beacon(body.lat, body.lon, body.comment,
+                                              body.channel_id)
     except (bp.ProtocolError, bp.CommandFailed) as e:
         raise HTTPException(502, str(e))
+    # the operator's own beacon is the natural home fix for prop analytics
+    config["station_lat"], config["station_lon"] = body.lat, body.lon
+    save_config(config)
+    return report
 
 
 class AprsStatusBody(BaseModel):
@@ -645,6 +666,33 @@ async def api_aprs_status(body: AprsStatusBody):
 @app.get("/api/aprs/log")
 async def api_aprs_log():
     return radio.aprs_log[-300:]
+
+
+@app.get("/api/aprs/prop")
+async def api_aprs_prop():
+    """PropView-style propagation analytics over the rolling packet history:
+    hourly heatmap, direct/digi meters, DX leaderboard. No radio needed —
+    works off stored history even while disconnected."""
+    return prop_store.analytics(config.get("station_lat"),
+                                config.get("station_lon"))
+
+
+class StationBody(BaseModel):
+    lat: float
+    lon: float
+
+
+@app.get("/api/aprs/station")
+async def api_get_station():
+    return {"lat": config.get("station_lat"), "lon": config.get("station_lon")}
+
+
+@app.post("/api/aprs/station")
+async def api_set_station(body: StationBody):
+    """Home QTH for distance/bearing analytics (also set by every beacon)."""
+    config["station_lat"], config["station_lon"] = body.lat, body.lon
+    save_config(config)
+    return {"lat": body.lat, "lon": body.lon}
 
 
 @app.get("/api/auth/check")

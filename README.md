@@ -1,78 +1,146 @@
 # KY-Benny(HTC)
 
-**Web remote control for Benshi-protocol radios (VR-N7600 / BTECH UV-Pro family)** — first sketch & shell.
+**Web remote control for Benshi-protocol radios (VR-N7600 / BTECH UV-Pro
+family).**
 
-Browser control of the VR-N7600 over Bluetooth + IP: the Pi holds the
-Bluetooth link to the radio (same Benshi/GAIA command protocol the vendor
-app uses) and serves a web UI, so the radio can be operated from any browser
-on the network — no phone app, no channel-binding to a second device.
+> ⚠️ **Work in progress.** This is a live reverse-engineering project —
+> everything below works against real hardware (VR-N7600, fw 147, over
+> Bluetooth from a Windows bridge machine), but interfaces change often,
+> corners are rough, and some features are experimental. Expect breakage.
+> Use at your own risk; nothing here is vendor-supported.
+
+The bridge machine holds the Bluetooth link to the radio (the same
+Benshi/GAIA command protocol the vendor app speaks) and serves a web UI,
+so the radio can be operated from any browser — phone, tablet, PC — with
+**no vendor app and no channel-binding to a second device**. The radio is
+Bluetooth-only; this bridge is what puts it on the network.
+
+## Features
+
+### Dashboard — the whole radio on one face
+
+![Dashboard](docs/screenshots/dash.png)
+
+- Virtual front panel: DSEG-style LCD with dual VFO rows, channel names,
+  live 15-segment S-meter with peak hold (fed by the radio's own RSSI),
+  battery/region/BUSY/TX icons, four LCD colours (amber/green/blue/white)
+  and a true-black AMOLED-friendly theme.
+- All operating controls live on the face: **PTT (press & hold, Space bar
+  too)**, listen (RX) with browser volume, radio volume + squelch sliders,
+  VFO A/B channel pick, dual watch, scan, A/B swap, monitor (open squelch),
+  1750 Hz tone burst, channel editor, channel step, power on/off.
+- TX lamp is properly disambiguated from the radio's ~5 s post-RX
+  channel-hold quirk (live-RE'd; see `FINDINGS.txt` §11e).
+- Remote wake: connecting can power on a soft-off radio (`wake_on_connect`).
+
+### Voice over IP — talk and listen from the browser *(working, still maturing)*
+
+- Radio audio rides its AOC Bluetooth channel (SBC, 32 kHz mono) through
+  ffmpeg to the browser over a binary WebSocket — both directions.
+- Press-and-hold PTT keys the radio from your browser mic; verified on-air
+  both ways against real hardware. Windows bridge only for now; Linux port
+  planned.
+
+![Voice](docs/screenshots/voice.png)
+
+### APRS + propagation view *(new, in progress)*
+
+![APRS](docs/screenshots/aprs.png)
+
+- The radio's TNC data channel is decoded natively: positions (plain,
+  compressed, **Mic-E**), messages, status, objects — live feed + map
+  (Leaflet, light/dark tiles, offline-friendly vendored assets).
+- Send APRS **messages**, **position beacons** (browser geolocation) and
+  **status** straight through the radio.
+- Full beacon/BSS config: callsign, SSID, symbol, digi path, interval,
+  smart beacon, Mic-E, PTT-release beacons, packet format.
+- **Propagation analytics** (inspired by
+  [APRS-PropView](https://github.com/RF-YVY/APRS-PropView)): packets
+  persist to a rolling 48 h history, and the panel shows direct-heard vs
+  digipeated meters, max-DX meter, per-hour × distance-band heatmap, a DX
+  leaderboard with bearings, and range rings on the map. A `DX n km` pill
+  appears on the Dashboard face when something distant was heard in the
+  last hour. Direct (no digi flag) copies are the band-opening signal.
+
+### Channels
+
+![Channels](docs/screenshots/channels.png)
+
+- Full memory table read from the radio: name, RX/TX frequency, mode,
+  CTCSS/DCS tones, bandwidth, power, scan, flags.
+- Editor writes everything back to the radio; per-row VFO A/B assign.
+
+### Settings
+
+![Settings](docs/screenshots/settings.png)
+
+- The radio's settings blocks, decoded and editable: audio/mic gains, VOX,
+  TX limits, power/display, GPS/positioning, KISS TNC, RF/channel flags,
+  weather — with optional persist-to-flash, and export/import.
+- **Programmable buttons**: remap the radio's physical keys
+  (press/single/double/long per button), same as the vendor app.
+
+### Everything else
+
+![Log](docs/screenshots/log.png)
+
+- Live updates over WebSocket (radio event notifications + polling).
+- **Remote access**: single-token gate on the API + websockets — set
+  `access_token` in `config.json` before port-forwarding/VPN.
+- **Demo mode**: open `/?demo=1` for a simulated radio, no hardware needed.
+- Debug/RE endpoints (`/api/debug/*`) and an event log for protocol work.
 
 ## Run
 
 ```
-python3 app.py            # http://<pi>:8099
+python app.py             # serves http://<bridge-machine>:8099
 ```
 
-or install the service:
-
-```
-sudo cp vrn7600.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now vrn7600.service
-```
+Windows (current dev platform): a venv with `fastapi uvicorn bleak pyserial
+sounddevice numpy websockets` plus **ffmpeg** on the PATH for voice.
+Linux/Pi: control + APRS work; the AOC voice bridge port is on the roadmap.
+A `vrn7600.service` unit is included for systemd installs.
 
 ## First connect
 
-1. Power the radio on with Bluetooth enabled (pairing mode for first use).
-2. Open the web UI → **Scan**, click the radio, **Connect**
-   (or put its MAC in `config.json`).
-3. Transport `auto` tries BLE GATT first, then classic RFCOMM (GAIA SPP).
-   With `auto_connect: true` the bridge reconnects whenever the radio
-   reappears.
+1. Radio on, Bluetooth enabled (pairing mode only needed the very first
+   time, for scanning).
+2. Open the web UI → **Scan** → click the radio → **Connect** (or put its
+   MAC / COM port in `config.json`).
+3. Transports: BLE GATT, classic RFCOMM (GAIA/SPP) or a bonded serial COM
+   port. One BT connection at a time — close the vendor app first.
 
-## What works
+## Status / roadmap
 
-Tabbed UI: **Dashboard · Channels · APRS · Settings · Log**
-
-- **Dashboard**: virtual radio screen (LCD-style panel mirroring the
-  physical display — VFO A/B lines, active channel arrow, TX/RX/scan/DW/GPS
-  icons, volume/squelch, battery bar, RSSI), plus dual watch, volume,
-  squelch, channel scan, power on/off, GPS fix.
-- **Channels**: full memory table read from the radio (name, RX/TX freq,
-  mode, tones, bandwidth, power, scan, flags); editor writes everything back
-  (WRITE_RF_CH + STORE_SETTINGS), CTCSS dropdowns, A/B select per row.
-- **APRS**: live decoded packet feed (positions incl. Mic-E, messages,
-  status, objects) from the radio's TNC data channel; send APRS messages,
-  position beacons (with browser geolocation) and status; full beacon/BSS
-  config (callsign, SSID, symbol, path, interval, smart beacon, Mic-E,
-  PTT-release beacons, packet format).
-- **Settings**: the radio settings the app exposes — audio (mic gains,
-  speaker, tones, tail eliminate, NS), VOX, TX limits, power saving,
-  display, GPS/positioning, KISS TNC — with optional persist-to-flash.
-- Live updates over WebSocket from radio event notifications + 30 s poll.
-
-## Roadmap
-
-The end goal: **full remote voice operation through the web UI** — talk and
-listen from any browser, no channel-binding to a secondary device, nothing
-but the radio + this bridge.
-
-- [ ] TX/RX **audio** over IP with PTT (radio streams SBC over classic BT;
-      bridge to browser via WebSocket/WebRTC)
+- [x] Full control surface (channels, settings, PF buttons, FM broadcast,
+      regions), virtual LCD, live S-meter
+- [x] Voice TX/RX over IP via the AOC audio channel (Windows bridge)
+- [x] APRS decode/send + map
+- [x] Propagation analytics (PropView-style) — **fresh, still being tuned**
+- [ ] Linux/Pi port of the voice bridge
+- [ ] DTMF keypad, VOX from browser, AudioWorklet migration
+- [ ] Opus/WebRTC for low-bandwidth remote links
 - [ ] KISS-over-IP bridge (radio has a KISS TNC mode)
-- [ ] APRS map view
-- [ ] Live test pass against VR-N7600 hardware
+- [ ] Firmware update (FOTA) — deliberately last: flash path is un-RE'd
+      and is the one place a bad write can brick the radio
 
 ## Files
 
-- `benshi.py` — protocol: GAIA/BLE framing, command set, bit-packed structs
-  (dev info, channels, settings, HT status, position, BSS/APRS settings,
+- `benshi.py` — protocol: GAIA/BLE framing, the 77-command set, bit-packed
+  structs (dev info, channels, settings, HT status, position, BSS/APRS,
   TNC data fragmentation/reassembly).
 - `aprs.py` — AX.25 UI-frame + APRS codec (positions, Mic-E, messages,
   status, objects).
-- `radio.py` — async client: bleak GATT + AF_BLUETOOTH RFCOMM transports,
-  request/reply matching, event notifications, APRS send/receive.
-- `app.py` — FastAPI: REST + WebSocket push + static UI. Port in
-  `config.json` (default 8099).
+- `prop.py` — propagation analytics: persistent packet history, distance/
+  bearing, hourly heatmap, DX leaderboard.
+- `radio.py` — async client: BLE GATT / RFCOMM / serial transports,
+  request-reply matching, event notifications, APRS mixin.
+- `audio.py` — AOC voice bridge: WinRT StreamSocket + ffmpeg SBC
+  encode/decode pipes.
+- `app.py` — FastAPI: REST + WebSocket push + static UI (port in
+  `config.json`, default 8099).
+- `CAPABILITIES.md` — the full button-for-button command matrix;
+  `FINDINGS.txt` — the reverse-engineering lab notebook.
 
 ## Credits
 
@@ -81,4 +149,6 @@ This project stands on a combination of the efforts of
 whose benlink project documented the Benshi command protocol — and
 [Ylian Saint-Hilaire (Ylianst)](https://github.com/Ylianst/HTCommander) —
 whose HTCommander proved full PC control including Bluetooth audio.
+The propagation view is modelled on
+[RF-YVY/APRS-PropView](https://github.com/RF-YVY/APRS-PropView).
 Own-hardware interoperability project.

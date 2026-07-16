@@ -98,6 +98,25 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .aprspkt .hdr{display:flex;gap:8px;font-weight:600}
 .aprspkt .hdr .time{margin-left:auto;color:var(--dim);font-weight:400;font-size:11px}
 .aprspkt .body{color:var(--dim);margin-top:2px;white-space:pre-wrap;word-break:break-word}
+/* propagation panel (PropView-style) */
+.propmeters{display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.propmeter{flex:1;min-width:150px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:8px;padding:8px 10px}
+.propmeter .lbl{font-size:10px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase}
+.propmeter .val{font-size:20px;font-weight:700;margin:2px 0}
+.propmeter .val small{font-size:11px;font-weight:400;color:var(--dim)}
+.propbar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.propbar i{display:block;height:100%;width:0;background:var(--acc);transition:width .4s}
+.propgrid{display:grid;grid-template-columns:1fr 250px;gap:14px}
+@media(max-width:900px){.propgrid{grid-template-columns:1fr}}
+.propheat{width:100%;border-collapse:collapse;table-layout:fixed}
+.propheat td{border:1px solid var(--panel2);height:15px;padding:0}
+.propheat th{border:0;height:14px;padding:0 4px 0 0;font-size:9px;font-weight:400;
+  color:var(--dim);white-space:nowrap}
+.proplead{width:100%;border-collapse:collapse;font-size:12px}
+.proplead td,.proplead th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left}
+.proplead th{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.proplead td.r,.proplead th.r{text-align:right}
 .pill{font-size:10px;padding:1px 7px;border-radius:8px;background:var(--panel);
   border:1px solid var(--line);color:var(--dim);text-transform:uppercase}
 .check{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0}
@@ -466,6 +485,40 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 <!-- ======================= APRS ======================= -->
 <div class="tab" id="tab-aprs">
   <div class="card">
+    <h2>Propagation <span class="pill" id="propPkts">0 pkt/24h</span>
+      <span class="pill" id="propStns">0 stn</span>
+      <button style="float:right;padding:2px 8px;font-size:11px" onclick="loadProp()">refresh</button></h2>
+    <div class="propmeters">
+      <div class="propmeter"><div class="lbl">direct heard · last hour</div>
+        <div class="val" id="pmDirV">–</div><div class="propbar"><i id="pmDir"></i></div></div>
+      <div class="propmeter"><div class="lbl">via digi · last hour</div>
+        <div class="val" id="pmDigV">–</div><div class="propbar"><i id="pmDig"></i></div></div>
+      <div class="propmeter"><div class="lbl">max DX · last hour</div>
+        <div class="val" id="pmDxV">–</div><div class="propbar"><i id="pmDx"></i></div></div>
+      <div class="propmeter"><div class="lbl">stations · hour / 24 h</div>
+        <div class="val" id="pmStnV">–</div><div class="propbar"><i id="pmStn"></i></div></div>
+    </div>
+    <div class="propgrid">
+      <div>
+        <div class="dimtxt" style="font-size:11px;margin-bottom:4px">
+          Packets per hour by distance band, last 24 h (distance rows need your station position)</div>
+        <table class="propheat" id="propHeat"></table>
+      </div>
+      <div>
+        <div class="dimtxt" style="font-size:11px;margin-bottom:4px">DX leaderboard, 48 h</div>
+        <table class="proplead" id="propLead"></table>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px;align-items:center">
+      <span class="dimtxt" style="font-size:11px">My station:</span>
+      <input type="number" id="propLat" step="0.00001" placeholder="lat" style="width:110px">
+      <input type="number" id="propLon" step="0.00001" placeholder="lon" style="width:110px">
+      <button style="padding:2px 8px;font-size:11px" onclick="propUseGeo()">use my location</button>
+      <button class="acc" style="padding:2px 8px;font-size:11px" onclick="savePropHome()">save</button>
+      <span class="dimtxt" style="font-size:11px">— enables distance/DX + map rings (sending a beacon also sets it)</span>
+    </div>
+  </div>
+  <div class="card">
     <h2>Map <span class="pill" id="aprsMapCount">0</span>
       <button style="float:right;padding:2px 8px;font-size:11px" onclick="fitAprsMap()">fit stations</button></h2>
     <div id="aprsMap" style="height:380px;border-radius:8px;overflow:hidden;background:var(--panel2)"></div>
@@ -756,11 +809,12 @@ const CTCSS=[67,69.3,71.9,74.4,77,79.7,82.5,85.4,88.5,91.5,94.8,97.4,100,
 /* ---------------- tabs ---------------- */
 $("tabs").addEventListener("click",e=>{
   const t=e.target.dataset.tab;if(!t)return;
+  if(location.hash!=="#"+t)history.replaceState(null,"","#"+t);
   for(const b of $("tabs").children)b.classList.toggle("on",b.dataset.tab===t);
   for(const d of document.querySelectorAll(".tab"))
     d.classList.toggle("on",d.id==="tab-"+t);
   if(t==="aprs"&&state.connected&&!state.bss)loadBss(0);
-  if(t==="aprs")setTimeout(()=>{initAprsMap();updateAprsMap();},0);
+  if(t==="aprs")setTimeout(()=>{initAprsMap();updateAprsMap();loadProp();},0);
   if(t==="settings")renderSettingsTab();
   if(t==="voice"||t==="dash")refreshAudio();
 });
@@ -833,7 +887,7 @@ function handleMsg(kind,d){
     renderChannels();
     logLine(`channel ${d.channel_id+1} updated (${esc(d.name)||"unnamed"})`);
   }
-  else if(kind==="aprs"){state.aprs_log.push(d);renderAprsFeed();
+  else if(kind==="aprs"){state.aprs_log.push(d);renderAprsFeed();schedProp();
     logLine(`APRS ${d.dir}: ${esc(d.source)} ${d.type}`);}
   else if(kind==="data_rxd"){logLine("data rx: "+d.hex);}
   else if(kind==="position"){logLine(`position: ${d.latitude.toFixed(5)}, ${d.longitude.toFixed(5)}`);}
@@ -1003,6 +1057,8 @@ function renderLcd(){
     if(state.transport)foot.push(state.transport.toUpperCase());
     if(DEMO)foot.push("DEMO");
   }
+  if(propData&&propData.meter&&propData.meter.max_km_hour>0)
+    foot.push(`DX <b>${propData.meter.max_km_hour.toFixed(0)}</b> km`);
   $("lcdFoot").innerHTML=foot.map(f=>`<span>${f}</span>`).join("");
 }
 
@@ -1254,6 +1310,125 @@ function fitAprsMap(){
   if(!aprsMap)return;
   const pts=stationsFromLog().map(p=>[p.latitude,p.longitude]);
   if(pts.length)aprsMap.fitBounds(pts,{padding:[30,30],maxZoom:13});
+}
+
+/* -------- propagation analytics (PropView-style, /api/aprs/prop) --------
+   Meters + heatmap + DX leaderboard computed server-side over the rolling
+   48 h packet history (the radio is the TNC). */
+let propData=null, propTimer=0, propRings=null;
+async function loadProp(){
+  if(DEMO){propData=demoProp();renderProp();return;}
+  try{propData=await api("/api/aprs/prop");}catch(e){return;}
+  renderProp();
+}
+function schedProp(){          // throttle: one refresh per burst of packets
+  if(!propTimer)propTimer=setTimeout(()=>{propTimer=0;loadProp();},4000);
+}
+function fmtAge(t){const s=Math.max(0,Date.now()/1000-t);
+  return s<90?Math.round(s)+"s":s<5400?Math.round(s/60)+"m":(s/3600).toFixed(1)+"h";}
+function renderProp(){
+  const p=propData;if(!p)return;
+  const m=p.meter;
+  $("propPkts").textContent=m.packets_24h+" pkt/24h";
+  $("propStns").textContent=m.stations_24h+" stn";
+  $("pmDirV").innerHTML=m.direct_hour+" <small>pkts</small>";
+  $("pmDigV").innerHTML=m.digi_hour+" <small>pkts</small>";
+  $("pmDxV").innerHTML=m.max_km_hour?m.max_km_hour.toFixed(0)+" <small>km</small>":"–";
+  $("pmStnV").innerHTML=m.stations_hour+" <small>/ "+m.stations_24h+"</small>";
+  const pct=(v,base)=>base?Math.min(100,100*v/base)+"%":"0%";
+  $("pmDir").style.width=pct(m.direct_hour,m.base_direct);
+  $("pmDig").style.width=pct(m.digi_hour,Math.max(1,...p.hours.map(h=>h.digi)));
+  $("pmDx").style.width=pct(m.max_km_hour,m.base_km);
+  $("pmStn").style.width=pct(m.stations_hour,m.stations_24h);
+  renderPropHeat(p);renderPropLead(p);
+  if(p.home&&document.activeElement!==$("propLat")
+           &&document.activeElement!==$("propLon")){
+    $("propLat").value=p.home.lat;$("propLon").value=p.home.lon;}
+  updatePropRings();
+  renderLcd();                 // dashboard footer DX pill
+}
+function heatColor(n,max){
+  if(!n)return"transparent";
+  const a=Math.round(100*(.2+.8*Math.min(1,n/max)));
+  return`color-mix(in srgb, var(--acc) ${a}%, transparent)`;
+}
+function renderPropHeat(p){
+  const labels=p.bands_km.map((b,i)=>(i?p.bands_km[i-1]:0)+"–"+b+" km")
+    .concat([p.bands_km[p.bands_km.length-1]+"+ km"]);
+  let max=1;for(const h of p.hours)for(const c of h.bands)max=Math.max(max,c);
+  let html="<tr><th style='width:56px'></th>"+p.hours.map(h=>{
+    const hr=new Date(h.t*1000).getHours();
+    return"<th style='text-align:center'>"+(hr%3?"":String(hr).padStart(2,"0"))+"</th>";
+  }).join("")+"</tr>";
+  for(let b=labels.length-1;b>=0;b--)
+    html+="<tr><th style='text-align:right'>"+labels[b]+"</th>"+p.hours.map(h=>
+      `<td style="background:${heatColor(h.bands[b],max)}" title="${labels[b]} · ${h.bands[b]} pkt"></td>`
+    ).join("")+"</tr>";
+  let maxN=1;for(const h of p.hours)maxN=Math.max(maxN,h.n);
+  html+="<tr><th style='text-align:right'>all pkts</th>"+p.hours.map(h=>
+    `<td style="background:${heatColor(h.n,maxN)}" title="${h.n} pkt"></td>`
+  ).join("")+"</tr>";
+  $("propHeat").innerHTML=html;
+}
+function renderPropLead(p){
+  if(!p.leaderboard.length){
+    $("propLead").innerHTML=`<tr><td class="dimtxt">${
+      p.home?"no distant positions heard yet":"set your station position first"
+    }</td></tr>`;return;}
+  $("propLead").innerHTML=
+    "<tr><th>call</th><th class='r'>km</th><th class='r'>brg</th><th class='r'>heard</th></tr>"+
+    p.leaderboard.map(e=>
+      `<tr><td><b>${esc(e.call)}</b>${e.direct?"":" <span class='dimtxt' style='font-size:10px'>digi</span>"}</td>`+
+      `<td class="r">${e.km.toFixed(0)}</td><td class="r">${e.bearing}°</td>`+
+      `<td class="r">${fmtAge(e.time)}</td></tr>`).join("");
+}
+function updatePropRings(){
+  if(!aprsMap)return;
+  if(propRings){propRings.remove();propRings=null;}
+  const h=propData&&propData.home;if(!h)return;
+  propRings=L.layerGroup();
+  for(const km of[25,50,100,200])
+    L.circle([h.lat,h.lon],{radius:km*1000,color:"#888",weight:1,opacity:.5,
+      fill:false,dashArray:"4 4"}).bindTooltip(km+" km").addTo(propRings);
+  L.circleMarker([h.lat,h.lon],{radius:5,color:"#fbbf24",fillColor:"#fbbf24",
+    fillOpacity:1}).bindTooltip("my station").addTo(propRings);
+  propRings.addTo(aprsMap);
+}
+async function savePropHome(){
+  const lat=parseFloat($("propLat").value),lon=parseFloat($("propLon").value);
+  if(isNaN(lat)||isNaN(lon)){alert("enter lat + lon first");return;}
+  try{await post("/api/aprs/station",{lat,lon});loadProp();}
+  catch(e){alert("save failed: "+e.message);}
+}
+function propUseGeo(){
+  if(!navigator.geolocation){alert("browser has no geolocation");return;}
+  navigator.geolocation.getCurrentPosition(p=>{
+    $("propLat").value=p.coords.latitude.toFixed(5);
+    $("propLon").value=p.coords.longitude.toFixed(5);
+  },e=>alert("geolocation: "+e.message));
+}
+function demoProp(){
+  const now=Math.floor(Date.now()/1000),h0=Math.floor(now/3600)-23;
+  const hours=[];
+  for(let i=0;i<24;i++){
+    const n=Math.max(0,Math.round(4+4*Math.sin(i/3)+Math.random()*3));
+    const direct=Math.round(n*.6);
+    hours.push({t:(h0+i)*3600,n,direct,digi:n-direct,
+      max_km:n?Math.round(30+220*Math.random()):0,
+      bands:[0,1,2,3,4,5].map(b=>Math.max(0,Math.round(n*Math.exp(-b/2)*Math.random())))});
+  }
+  const calls=["GM4SVM-9","MB7UC","2M0KAU-7","GM8OTI","MM0GHM-9","GB3CS",
+    "MM3PDM-7","GM4X-11","MM7WAB","GM0XYZ-5"];
+  return{home:{lat:55.94,lon:-4.75},bands_km:[10,25,50,100,250],hours,
+    leaderboard:calls.map((c,i)=>({call:c,km:280-25*i+Math.random()*10,
+      bearing:Math.round(Math.random()*360),time:now-Math.random()*86400,
+      direct:i%3!==1})),
+    meter:{direct_hour:hours[23].direct,digi_hour:hours[23].digi,
+      max_km_hour:hours[23].max_km,
+      base_direct:Math.max(...hours.map(h=>h.direct)),
+      base_km:Math.max(...hours.map(h=>h.max_km)),
+      packets_24h:hours.reduce((s,h)=>s+h.n,0),
+      stations_hour:5,stations_24h:23}};
 }
 function renderBss(){
   const b=state.bss;if(!b)return;
@@ -1722,6 +1897,12 @@ function startDemo(){
 /* ---------------- startup ---------------- */
 buildSMeters();
 try{setLcdTheme(localStorage.getItem("lcdTheme")||"amber");}catch(e){}
+loadProp();   // prop analytics work off stored history even when disconnected
+{ // deep-link: /#aprs etc. opens that tab (also handy for screenshots)
+  const t=location.hash.slice(1);
+  const btn=document.querySelector(`#tabs [data-tab="${CSS.escape(t)}"]`);
+  if(btn)btn.click();
+}
 /* ---------------- voice / audio bridge ---------------- */
 let audioWs=null, rxCtx=null, rxGain=null, rxNext=0, rxEnabled=false;
 let txCtx=null, txStream=null, txSrc=null, txProc=null, keyed=false, micReady=null;
