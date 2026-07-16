@@ -104,34 +104,118 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .check input{accent-color:var(--acc)}
 fieldset{border:1px solid var(--line);border-radius:8px;margin:0 0 12px;padding:8px 12px}
 legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.8px;padding:0 6px}
-/* virtual radio screen */
-.lcd{background:#0a1208;border:1px solid #2c4a24;border-radius:12px;
-  box-shadow:inset 0 0 40px rgba(90,200,90,.06);
-  font-family:ui-monospace,Menlo,Consolas,monospace;color:#8fe08f}
+/* ================= virtual radio front panel ================= */
+@font-face{font-family:"DSEG7";
+  src:url(/static/vendor/dseg/DSEG7Classic-BoldItalic.woff2) format("woff2");
+  font-display:swap}
+@font-face{font-family:"DSEG7L";
+  src:url(/static/vendor/dseg/DSEG7Classic-Italic.woff2) format("woff2");
+  font-display:swap}
+@font-face{font-family:"DSEG14";
+  src:url(/static/vendor/dseg/DSEG14Classic-Italic.woff2) format("woff2");
+  font-display:swap}
+.radioface{background:linear-gradient(175deg,#2a3038,#161a20 55%,#0e1116);
+  border:1px solid #343c46;border-radius:16px;padding:12px 14px 10px;
+  box-shadow:0 6px 24px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.07);
+  margin-bottom:14px}
+.rf-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.rf-brand{font-size:12px;font-weight:800;letter-spacing:2.5px;color:#aeb9c6}
+.rf-brand small{color:#5d6a79;font-weight:600;letter-spacing:1.5px}
+.rf-led{width:9px;height:9px;border-radius:50%;background:#333;
+  box-shadow:inset 0 0 2px #000}
+.rf-led.on{background:var(--good);box-shadow:0 0 7px var(--good)}
+.rf-led.tx{background:var(--tx);box-shadow:0 0 9px var(--tx);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.35}}
+.rf-theme{margin-left:auto;display:flex;gap:4px}
+.rf-theme button{width:18px;height:18px;padding:0;border-radius:50%;border:1px solid #444}
+.rf-theme .th-am{background:#ffb02e}.rf-theme .th-gr{background:#7ce480}.rf-theme .th-ic{background:#9fd4ff}
+/* LCD glass — themeable via vars */
+.lcd{--fg:#ffc46b;--hi:#ffe0ae;--dim:rgba(255,196,107,.42);--ghost:rgba(255,196,107,.09);
+  --glass:radial-gradient(120% 140% at 50% 0%,#20180a 0%,#150f05 55%,#0e0a04 100%);
+  --grid:rgba(255,196,107,.14);
+  background:var(--glass);border:1px solid #000;border-radius:8px;
+  box-shadow:inset 0 2px 14px rgba(0,0,0,.85),inset 0 0 60px rgba(255,180,80,.05);
+  padding:10px 14px;font-family:ui-monospace,Menlo,Consolas,monospace;
+  color:var(--fg);position:relative;overflow:hidden}
+.lcd.green{--fg:#8ff08f;--hi:#d2ffd2;--dim:rgba(143,240,143,.42);--ghost:rgba(143,240,143,.09);
+  --glass:radial-gradient(120% 140% at 50% 0%,#0d1a0c 0%,#081207 55%,#050c05 100%);
+  --grid:rgba(143,240,143,.14);box-shadow:inset 0 2px 14px rgba(0,0,0,.85),inset 0 0 60px rgba(110,230,110,.05)}
+.lcd.ice{--fg:#a8d8ff;--hi:#e2f3ff;--dim:rgba(168,216,255,.42);--ghost:rgba(168,216,255,.09);
+  --glass:radial-gradient(120% 140% at 50% 0%,#0b141d 0%,#070e15 55%,#04080d 100%);
+  --grid:rgba(168,216,255,.14);box-shadow:inset 0 2px 14px rgba(0,0,0,.85),inset 0 0 60px rgba(140,200,255,.05)}
+.lcd::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:8px;
+  background:linear-gradient(160deg,rgba(255,255,255,.055) 0%,transparent 32%)}
 .lcd .hid{visibility:hidden}
-.lcd-icons{display:flex;gap:10px;align-items:center;font-size:11px;
-  letter-spacing:1px;border-bottom:1px dashed #24401e;padding-bottom:6px;margin-bottom:8px}
-.lcd-ic{color:#8fe08f}
-.lcd-ic.alert{color:#ffd45e}
-.lcd-ic.tx{color:#ff7a6e}
+.lcd-icons{display:flex;gap:12px;align-items:center;font-size:11px;font-weight:600;
+  letter-spacing:1px;border-bottom:1px solid var(--grid);padding-bottom:6px;margin-bottom:6px}
+.lcd-ic{color:var(--fg);white-space:nowrap}
+.lcd-ic.faint{color:var(--dim)}
+.lcd-ic.alert{color:var(--hi)}
+.lcd-ic.tx{color:#ff6e63;text-shadow:0 0 8px rgba(255,110,99,.7)}
 .lcd-spacer{flex:1}
-.lcd-vfo{display:flex;align-items:center;gap:10px;padding:6px 4px;border-radius:8px}
-.lcd-vfo.active{background:rgba(120,230,120,.08)}
-.lcd-vfo.rxing{background:rgba(120,230,120,.16)}
-.lcd-vfo.txing{background:rgba(255,110,100,.14)}
-.lcd-ab{font-size:15px;font-weight:700;border:1px solid #2c4a24;border-radius:5px;
-  padding:1px 7px;color:#8fe08f}
-.lcd-ab.b{color:#ffd45e;border-color:#4a3c14}
-.lcd-arrow{width:12px;color:#d6ffd6;font-weight:700}
-.lcd-main{flex:1;min-width:0}
-.lcd-name{font-size:15px;font-weight:600;color:#d6ffd6;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
-.lcd-freq{font-size:24px;font-weight:700;letter-spacing:1px;color:#aef0ae;
+.lcd-batt{display:inline-flex;align-items:center;gap:1.5px;border:1px solid var(--fg);
+  border-radius:2px;padding:1.5px 2px;height:11px;position:relative;margin-right:3px}
+.lcd-batt::after{content:"";position:absolute;right:-4px;top:2.5px;width:2.5px;height:4px;
+  background:var(--fg);border-radius:0 1px 1px 0}
+.lcd-batt i{width:3.5px;height:6px;background:var(--fg);opacity:.18;border-radius:.5px}
+.lcd-batt i.on{opacity:1}
+.lcd-vfo{display:grid;grid-template-columns:auto 1fr auto;column-gap:12px;
+  align-items:center;padding:5px 6px;border-radius:6px;margin:1px -6px}
+.lcd-vfo.active{background:var(--ghost)}
+.lcd-ab{grid-row:span 2;align-self:center;font-size:16px;font-weight:800;
+  border:1.5px solid var(--dim);border-radius:4px;padding:2px 8px;color:var(--fg);
+  display:flex;flex-direction:column;align-items:center;line-height:1.15}
+.lcd-vfo.active .lcd-ab{background:var(--fg);color:#100b02;border-color:var(--fg)}
+.lcd-ab .cur{font-size:8px;letter-spacing:.5px;font-weight:700}
+.lcd-nameline{display:flex;align-items:baseline;gap:10px;min-width:0}
+.lcd-ch{font-size:11px;font-weight:700;color:var(--dim);letter-spacing:1px}
+.lcd-name{font-family:"DSEG14",ui-monospace,monospace;font-size:13px;color:var(--hi);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+.lcd-freqwrap{position:relative;display:inline-block;line-height:1}
+.lcd-freq,.lcd-freq-ghost{font-family:"DSEG7","DSEG7L",ui-monospace,monospace;
+  font-size:34px;letter-spacing:1px;white-space:pre}
+.lcd-freq{color:var(--fg);text-shadow:0 0 10px color-mix(in srgb,var(--fg) 35%,transparent);position:relative;z-index:1}
+.lcd-freq .mhz{font-size:11px;font-family:ui-monospace,monospace;color:var(--dim);
+  letter-spacing:1px;margin-left:6px;vertical-align:baseline}
+.lcd-freq-ghost{position:absolute;left:0;top:0;color:var(--ghost);z-index:0;user-select:none}
+.lcd-flags{grid-column:3;grid-row:span 2;text-align:right;font-size:11px;
+  font-weight:700;color:var(--dim);letter-spacing:1px;line-height:1.7;white-space:pre-line}
+.lcd-flags b{color:var(--fg);font-weight:700}
+/* S-meter */
+.smeter{grid-column:2/4;display:flex;align-items:center;gap:8px;margin-top:3px;height:20px}
+.smeter .lbl{font-size:10px;font-weight:800;color:var(--dim);width:14px}
+.smeter .segs{display:flex;gap:2.5px;align-items:flex-end;flex:1;max-width:340px}
+.smeter .seg7{width:100%;flex:1;height:9px;background:var(--fg);opacity:.13;
+  border-radius:1px;transition:opacity .08s}
+.smeter .seg7.hot{background:#ff6e63}
+.smeter .seg7.lit{opacity:1;box-shadow:0 0 6px color-mix(in srgb,var(--fg) 55%,transparent)}
+.smeter .seg7.peak{opacity:.75}
+.smeter .rd{font-size:11px;font-weight:800;color:var(--hi);width:58px;text-align:left;
   font-variant-numeric:tabular-nums}
-.lcd-sub{text-align:right;font-size:11px;color:#5d9a5d;white-space:pre-line}
-.lcd-foot{border-top:1px dashed #24401e;margin-top:8px;padding-top:6px;
-  font-size:11px;color:#5d9a5d;display:flex;gap:14px;flex-wrap:wrap}
-@media(max-width:600px){.lcd-freq{font-size:18px}}
+.smeter.txmode .seg7.lit{background:#ff6e63;box-shadow:0 0 6px rgba(255,110,99,.6)}
+.smeter-scale{grid-column:2/4;display:flex;gap:2.5px;max-width:340px;flex:1;
+  font-size:8px;color:var(--dim);letter-spacing:0;margin:-1px 0 2px;padding-left:22px}
+.smeter-scale span{flex:1;text-align:center}
+.lcd-foot{border-top:1px solid var(--grid);margin-top:6px;padding-top:5px;
+  font-size:11px;font-weight:600;color:var(--dim);display:flex;gap:14px;flex-wrap:wrap;
+  letter-spacing:.5px}
+.lcd-foot b{color:var(--fg)}
+/* hardware key row under the glass */
+.rf-keys{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.rf-keys button{background:linear-gradient(180deg,#3a424d,#232932 60%,#1b2028);
+  border:1px solid #10141a;border-radius:7px;color:#c6d2e0;font-size:11px;
+  font-weight:700;letter-spacing:.8px;padding:7px 13px;
+  box-shadow:0 2px 3px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.09)}
+.rf-keys button:hover{border-color:#10141a;color:#fff}
+.rf-keys button:active{transform:translateY(1px);box-shadow:0 1px 1px rgba(0,0,0,.5)}
+.rf-keys button.lit{color:#7ce480;text-shadow:0 0 6px rgba(124,228,128,.6)}
+.rf-keys button.danger2{color:#ff8d84}
+.rf-keys .gap{flex:1}
+@media(max-width:640px){
+  .lcd-freq,.lcd-freq-ghost{font-size:22px}
+  .lcd-flags{font-size:9px}
+  .smeter .segs{max-width:220px}
+}
 </style>
 </head>
 <body>
@@ -158,52 +242,108 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 <main>
 <!-- ======================= DASHBOARD ======================= -->
 <div class="tab on" id="tab-dash">
-  <div class="lcd card" id="lcd">
-    <div class="lcd-icons">
-      <span id="iPwr" class="lcd-ic">⏻</span>
-      <span id="iTx" class="lcd-ic hid">TX</span>
-      <span id="iRx" class="lcd-ic hid">RX</span>
-      <span id="iScan" class="lcd-ic hid">SCAN</span>
-      <span id="iDw" class="lcd-ic hid">DW</span>
-      <span id="iGps" class="lcd-ic hid">GPS</span>
-      <span id="iBt" class="lcd-ic hid">BT</span>
-      <span class="lcd-spacer"></span>
-      <span id="iVol" class="lcd-ic">VOL –</span>
-      <span id="iSql" class="lcd-ic">SQL –</span>
-      <span id="iBatt" class="lcd-ic">▮▮▮</span>
-    </div>
-    <div class="lcd-vfo" id="lcdA">
-      <span class="lcd-ab">A</span>
-      <span class="lcd-arrow" id="arrA"></span>
-      <div class="lcd-main">
-        <div class="lcd-name" id="lcdAName">—</div>
-        <div class="lcd-freq" id="lcdAFreq">———.————</div>
+  <div class="radioface" id="radioface">
+    <div class="rf-top">
+      <span id="rfLed" class="rf-led"></span>
+      <span class="rf-brand">VR-N7600 <small>REMOTE HEAD</small></span>
+      <div class="rf-theme" title="LCD backlight">
+        <button class="th-am" onclick="setLcdTheme('amber')" title="amber"></button>
+        <button class="th-gr" onclick="setLcdTheme('green')" title="green"></button>
+        <button class="th-ic" onclick="setLcdTheme('ice')" title="ice"></button>
       </div>
-      <div class="lcd-sub" id="lcdAInfo"></div>
     </div>
-    <div class="lcd-vfo" id="lcdB">
-      <span class="lcd-ab b">B</span>
-      <span class="lcd-arrow" id="arrB"></span>
-      <div class="lcd-main">
-        <div class="lcd-name" id="lcdBName">—</div>
-        <div class="lcd-freq" id="lcdBFreq">———.————</div>
+    <div class="lcd" id="lcd">
+      <div class="lcd-icons">
+        <span id="iPwr" class="lcd-ic faint">PWR</span>
+        <span id="iTx" class="lcd-ic tx hid">TX●</span>
+        <span id="iBusy" class="lcd-ic alert hid">BUSY</span>
+        <span id="iScan" class="lcd-ic hid">SCAN</span>
+        <span id="iDw" class="lcd-ic hid">DW</span>
+        <span id="iReg" class="lcd-ic hid"></span>
+        <span id="iGps" class="lcd-ic hid">GPS</span>
+        <span id="iBt" class="lcd-ic hid">BT</span>
+        <span class="lcd-spacer"></span>
+        <span id="iVol" class="lcd-ic faint">VOL –</span>
+        <span id="iSql" class="lcd-ic faint">SQL –</span>
+        <span class="lcd-batt" id="iBattBox" title="battery">
+          <i></i><i></i><i></i><i></i></span>
+        <span id="iBattPct" class="lcd-ic faint"></span>
       </div>
-      <div class="lcd-sub" id="lcdBInfo"></div>
+
+      <div class="lcd-vfo" id="lcdA">
+        <span class="lcd-ab">A<span class="cur hid" id="curA">◀▶</span></span>
+        <div class="lcd-nameline">
+          <span class="lcd-ch" id="lcdACh"></span>
+          <span class="lcd-name" id="lcdAName">----------</span>
+        </div>
+        <div class="lcd-flags" id="lcdAFlags"></div>
+        <div class="lcd-freqwrap" style="grid-column:2">
+          <span class="lcd-freq-ghost" id="lcdAGhost">888.8888</span>
+          <span class="lcd-freq" id="lcdAFreq">---.----<span class="mhz">MHz</span></span>
+        </div>
+        <div class="smeter" id="smA">
+          <span class="lbl">S</span>
+          <div class="segs" id="smASegs"></div>
+          <span class="rd" id="smARead"></span>
+        </div>
+        <div class="smeter-scale" id="smAScale"></div>
+      </div>
+
+      <div class="lcd-vfo" id="lcdB">
+        <span class="lcd-ab">B<span class="cur hid" id="curB">◀▶</span></span>
+        <div class="lcd-nameline">
+          <span class="lcd-ch" id="lcdBCh"></span>
+          <span class="lcd-name" id="lcdBName">----------</span>
+        </div>
+        <div class="lcd-flags" id="lcdBFlags"></div>
+        <div class="lcd-freqwrap" style="grid-column:2">
+          <span class="lcd-freq-ghost" id="lcdBGhost">888.8888</span>
+          <span class="lcd-freq" id="lcdBFreq">---.----<span class="mhz">MHz</span></span>
+        </div>
+        <div class="smeter" id="smB">
+          <span class="lbl">S</span>
+          <div class="segs" id="smBSegs"></div>
+          <span class="rd" id="smBRead"></span>
+        </div>
+        <div class="smeter-scale" id="smBScale"></div>
+      </div>
+
+      <div class="lcd-foot" id="lcdFoot">not connected</div>
     </div>
-    <div class="lcd-foot" id="lcdFoot">not connected</div>
+    <div class="rf-keys">
+      <button onclick="powerRadio(1)" title="radio power on">PWR ON</button>
+      <button class="danger2" onclick="powerRadio(0)" title="radio power off">PWR OFF</button>
+      <button id="kDw" onclick="cycleDualWatch()" title="dual watch off / A / B">DW</button>
+      <button id="kScan" onclick="toggleScan()" title="channel scan">SCAN</button>
+      <button id="kAB" onclick="swapAB()" title="swap VFO A and B channels">A/B</button>
+      <span class="gap"></span>
+      <button onclick="stepCh(-1)" title="active VFO down one channel">▼ CH</button>
+      <button onclick="stepCh(1)" title="active VFO up one channel">CH ▲</button>
+    </div>
   </div>
   <div class="card" id="connectCard">
     <h2>Connect</h2>
     <div class="row">
       <input type="text" id="macInput" placeholder="AA:BB:CC:DD:EE:FF" style="width:190px">
-      <select id="transportSel">
-        <option value="auto">auto</option><option value="ble">BLE</option>
-        <option value="rfcomm">RFCOMM</option>
+      <select id="transportSel" title="Pick how to connect">
+        <option value="ble">BLE</option>
+        <option value="rfcomm">RFCOMM / serial</option>
+        <option value="auto">auto (BLE → RFCOMM)</option>
       </select>
       <button class="acc" onclick="connectRadio()">Connect</button>
       <button onclick="scanDevices()" id="btnScan">Scan</button>
     </div>
+    <div class="row" style="margin-top:8px;align-items:center;gap:6px">
+      <label class="check" style="min-width:0" title="Reconnect this device automatically on startup and if it drops">
+        <input type="checkbox" id="autoConnChk" onchange="setAutoConnect(this.checked)"> auto-connect on startup</label>
+      <span class="dimtxt" style="font-size:11px">off = you pick and press Connect each time</span>
+    </div>
     <ul id="scanList"></ul>
+  </div>
+  <div class="card" id="radioInfoCard" style="display:none">
+    <h2>Radio info <span class="pill" id="riName">—</span></h2>
+    <div class="statgrid" id="riGrid"></div>
+    <div id="riCaps" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px"></div>
   </div>
   <div class="cols">
     <div class="card">
@@ -234,6 +374,17 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
         </div>
         <div class="spacer"></div>
         <button onclick="getPosition()">GPS fix</button>
+      </div>
+      <div class="row" id="regionRow" style="display:none"><label>Region / zone</label>
+        <select id="regionSel" onchange="setRegion(this.value)"></select>
+      </div>
+      <div class="row" id="fmRow" style="display:none"><label>FM broadcast</label>
+        <div class="seg" id="fmSeg">
+          <button data-v="0">Off</button><button data-v="1">On</button>
+        </div>
+        <span class="val" id="fmFreq" style="min-width:70px">–</span>
+        <button onclick="fmSeek('down')" title="seek down">⏮</button>
+        <button onclick="fmSeek('up')" title="seek up">⏭</button>
       </div>
       <div class="dimtxt" id="devInfo" style="font-size:11px;margin-top:6px"></div>
     </div>
@@ -367,6 +518,16 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
             </div>
             <div class="check"><input type="checkbox" id="sPttLock"><label for="sPttLock">PTT lock</label></div>
           </fieldset>
+          <fieldset><legend>Bluetooth audio</legend>
+            <div class="grid2">
+              <label title="Handsfree speaker/mic level (raw 0-3)">HM speaker (0-3)</label>
+              <input type="number" id="sHmSpeaker" min="0" max="3">
+            </div>
+            <div class="check"><input type="checkbox" id="sAghfpCall"><label for="sAghfpCall">AGHFP call mode</label></div>
+            <div class="check"><input type="checkbox" id="sAudioRelay"><label for="sAudioRelay">Audio relay</label></div>
+            <div class="check"><input type="checkbox" id="sKeepAghfp"><label for="sKeepAghfp">Keep AGHFP link</label></div>
+            <div class="check"><input type="checkbox" id="sAdaptResp"><label for="sAdaptResp">Adaptive response</label></div>
+          </fieldset>
         </div>
         <div>
           <fieldset><legend>Power / display</legend>
@@ -377,6 +538,8 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
             <div class="check"><input type="checkbox" id="sAutoPower"><label for="sAutoPower">Auto power on</label></div>
             <div class="check"><input type="checkbox" id="sPowerSave"><label for="sPowerSave">Power saving mode</label></div>
             <div class="check"><input type="checkbox" id="sImperial"><label for="sImperial">Imperial units</label></div>
+            <div class="check"><input type="checkbox" id="sPairPwrOn"><label for="sPairPwrOn">BT pairing at power-on</label></div>
+            <div class="check"><input type="checkbox" id="sLeadSync"><label for="sLeadSync">Leading sync bit</label></div>
           </fieldset>
           <fieldset><legend>GPS / position</legend>
             <div class="grid2">
@@ -388,6 +551,8 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
               <label>Time offset</label><input type="number" id="sTimeOff" min="0" max="63">
               <label>Auto-share ch</label><input type="number" id="sShareCh" min="0" max="255">
             </div>
+            <div class="check"><input type="checkbox" id="sCustomLoc"><label for="sCustomLoc">Use custom location</label></div>
+            <div class="check"><input type="checkbox" id="sGpwpl"><label for="sGpwpl">Upload GPWPL waypoints</label></div>
           </fieldset>
           <fieldset><legend>KISS / data</legend>
             <div class="check"><input type="checkbox" id="sKiss"><label for="sKiss">KISS TNC mode</label></div>
@@ -395,6 +560,23 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
             <div class="grid2">
               <label>KISS TX delay</label><input type="number" id="sKissDelay" min="0" max="255">
               <label>KISS TX tail</label><input type="number" id="sKissTail" min="0" max="255">
+            </div>
+          </fieldset>
+          <fieldset><legend>RF / channel</legend>
+            <div class="grid2">
+              <label title="raw radio value 0-3">VFO A TX power (0-3)</label><input type="number" id="sVfo1Pwr" min="0" max="3">
+              <label title="raw radio value 0-3">VFO B TX power (0-3)</label><input type="number" id="sVfo2Pwr" min="0" max="3">
+            </div>
+            <div class="check"><input type="checkbox" id="sFreqRange2"><label for="sFreqRange2">Use frequency range 2</label></div>
+            <div class="check"><input type="checkbox" id="sDisDigMute"><label for="sDisDigMute">Disable digital mute</label></div>
+            <div class="check"><input type="checkbox" id="sEccEn"><label for="sEccEn">Signaling ECC</label></div>
+            <div class="check"><input type="checkbox" id="sChDataLock"><label for="sChDataLock">Channel data lock</label></div>
+            <div class="check"><input type="checkbox" id="sModFreq"><label for="sModFreq">VFO A mod-freq flag</label></div>
+          </fieldset>
+          <fieldset><legend>Weather</legend>
+            <div class="grid2">
+              <label title="raw radio value 0-3">WX mode (0-3)</label><input type="number" id="sWxMode" min="0" max="3">
+              <label>NOAA channel</label><input type="number" id="sNoaaCh" min="0" max="15">
             </div>
           </fieldset>
         </div>
@@ -415,6 +597,21 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
       </div>
     </form>
     <div class="dimtxt" id="setRaw" style="font-size:11px;margin-top:8px"></div>
+  </div>
+  <div class="card">
+    <h2>Programmable buttons
+      <button style="float:right;padding:2px 8px;font-size:11px"
+        onclick="loadPf(1)">read from radio</button></h2>
+    <div class="dimtxt" style="font-size:12px;margin-bottom:8px">
+      Remap the radio's physical buttons — same as the vendor app's
+      “Programmable button” screen. Gestures: press = key-down,
+      single / double = clicks, long = hold.</div>
+    <table id="pfTable"><thead><tr><th>Button</th><th>Press</th>
+      <th>Single</th><th>Double</th><th>Long</th></tr></thead><tbody></tbody></table>
+    <div class="dimtxt" id="pfEmpty">Connect and press “read from radio”.</div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px">
+      <button class="acc" onclick="savePf()" id="pfSave" disabled>Write to radio</button>
+    </div>
   </div>
 </div>
 
@@ -463,6 +660,7 @@ const $=id=>document.getElementById(id);
 let state={connected:false,channels:[],settings:null,ht_status:null,
   bss:null,aprs_path:"",aprs_log:[]};
 let editingCh=null, ws=null, wsTimer=null;
+const DEMO=new URLSearchParams(location.search).has("demo");
 
 const CTCSS=[67,69.3,71.9,74.4,77,79.7,82.5,85.4,88.5,91.5,94.8,97.4,100,
  103.5,107.2,110.9,114.8,118.8,123,127.3,131.8,136.5,141.3,146.2,151.4,
@@ -512,13 +710,21 @@ function openWs(){
   wsTimer=setInterval(()=>{if(ws.readyState===1)ws.send("ping");},25000);
 }
 function handleMsg(kind,d){
-  if(kind==="snapshot"){state={...state,...d};renderAll();}
+  if(kind==="snapshot"){state={...state,...d};renderAll();
+    if(d.connected&&!pfValid)loadPf(0);
+    if(d.connected&&!(d.channels&&d.channels.length))loadChannels(1);}
   else if(kind==="connection"){
     state.connected=d.connected;renderHeader();
-    logLine(d.connected?"radio connected":"radio disconnected");
-    if(d.connected){loadChannels(0);loadBss(0);}
+    logLine(d.connected?"radio connected":"radio disconnected — press Connect when ready");
+    if(d.connected){loadChannels(0);loadBss(0);loadPf(0);loadFm();}
   }
   else if(kind==="ht_status"){state.ht_status=d;renderStatus();}
+  else if(kind==="rf"){                 // fast S-meter poll
+    if(d.ht_status)state.ht_status=d.ht_status;
+    if(d.rf_raw)state.rf_raw=d.rf_raw;
+    renderLcd();
+  }
+  else if(kind==="pf"){state.pf=d;renderPf();}
   else if(kind==="poll"){Object.assign(state,d);renderStatus();}
   else if(kind==="settings"){state.settings=d;renderSettings();}
   else if(kind==="bss"){state.bss=d;renderBss();renderLcd();}
@@ -537,65 +743,175 @@ function handleMsg(kind,d){
 
 /* ---------------- render ---------------- */
 function renderAll(){renderHeader();renderStatus();renderSettings();
-  renderChannels();renderDevInfo();renderBss();renderAprsFeed();renderLcd();}
+  renderChannels();renderDevInfo();renderBss();renderAprsFeed();renderLcd();
+  renderPf();renderFmRegion();}
 
-/* ---------------- virtual screen ---------------- */
+/* ---------------- virtual radio face ---------------- */
 function chOf(i){return state.channels.find(c=>c.channel_id===i);}
-function toneSub(c){
+
+/* LCD backlight theme */
+function setLcdTheme(t){
+  $("lcd").className="lcd"+(t==="amber"?"":" "+t);
+  try{localStorage.setItem("lcdTheme",t);}catch(e){}
+}
+
+/* S-meter: 15 segments driven by the radio's own RSSI (0..15).
+   Fast attack, slow decay, 1.2 s peak hold — like a real needle. */
+const SM={a:{cur:0,peak:0,peakT:0,target:0,tx:false},
+          b:{cur:0,peak:0,peakT:0,target:0,tx:false}};
+const SM_SCALE=["1","","3","","5","","7","","9","","+20","","+40","","+60"];
+function buildSMeters(){
+  for(const v of ["A","B"]){
+    $("sm"+v+"Segs").innerHTML=Array.from({length:15},(_,i)=>
+      `<i class="seg7${i>8?" hot":""}"></i>`).join("");
+    $("sm"+v+"Scale").innerHTML=SM_SCALE.map(t=>`<span>${t}</span>`).join("");
+  }
+}
+function sUnits(r){return r<=0?"S0":(r<=9?"S"+r:"S9+"+((r-9)*10));}
+function smTick(){
+  const now=performance.now();
+  for(const [k,V] of [["a","A"],["b","B"]]){
+    const m=SM[k];
+    if(m.target>m.cur)m.cur=m.target;                 // instant attack
+    else if(m.cur>m.target)m.cur=Math.max(m.target,m.cur-1);  // decay
+    if(m.cur>=m.peak){m.peak=m.cur;m.peakT=now;}
+    else if(now-m.peakT>1200&&m.peak>0)m.peak--;      // peak-hold then fall
+    const segs=$("sm"+V+"Segs");if(!segs)continue;
+    const kids=segs.children;
+    for(let i=0;i<15;i++){
+      kids[i].classList.toggle("lit",m.tx?true:i<m.cur);
+      kids[i].classList.toggle("peak",!m.tx&&!(i<m.cur)&&i===m.peak-1);
+    }
+    $("sm"+V).classList.toggle("txmode",m.tx);
+    $("sm"+V+"Read").textContent=m.tx?"TX":(m.cur>0||m.target>0?sUnits(m.target):"");
+  }
+}
+setInterval(smTick,90);
+
+function fmtSegFreq(hz){
+  if(!hz)return null;
+  const m=hz/1e6;
+  const ip=String(Math.floor(m)).padStart(3,"!");   // "!" = blank 7-seg digit
+  const fp=String(Math.round((m%1)*1e4)).padStart(4,"0");
+  return ip+"."+fp;
+}
+function vfoFlags(c){
   if(!c)return"";
-  const r=toneTxt(c.rx_sub_audio),t=toneTxt(c.tx_sub_audio);
-  let s=[];
-  if(r)s.push("R "+r);if(t&&t!==r)s.push("T "+t);
-  s.push((c.bandwidth_wide?"W":"N")+" "+(c.tx_at_max_power?"H":(c.tx_at_med_power?"M":"L")));
-  return s.join("  ");
+  const lines=[];
+  const rt=toneTxt(c.rx_sub_audio),tt=toneTxt(c.tx_sub_audio);
+  if(rt||tt)lines.push((rt?"T "+rt:"")+(tt&&tt!==rt?(rt?" / ":"")+"T↑ "+tt:""));
+  lines.push(["FM","AM","DMR"][c.rx_mod??0]+"  "+(c.bandwidth_wide?"WIDE":"NAR")
+    +"  "+(c.tx_disable?"RX ONLY":(c.tx_at_max_power?"HIGH":(c.tx_at_med_power?"MED":"LOW"))));
+  const extra=[];
+  if(c.scan)extra.push("SC");if(c.talk_around)extra.push("TA");
+  if(c.bclo)extra.push("BCLO");if(c.mute)extra.push("MUTE");
+  if(extra.length)lines.push(extra.join(" "));
+  return lines.join("\n");
 }
 function renderLcd(){
   const st=state.settings,s=state.ht_status,conn=state.connected;
   const on=conn&&s&&s.is_power_on;
-  // icons
-  $("iPwr").className="lcd-ic"+(on?"":" alert");
-  $("iPwr").textContent=on?"⏻ ON":(conn?"⏻ OFF":"⏻ ---");
+  $("rfLed").className="rf-led"+(s&&s.is_in_tx?" tx":(on?" on":""));
+  $("iPwr").className="lcd-ic"+(on?"":" faint");
+  $("iPwr").textContent=conn?(on?"PWR":"OFF"):"PWR";
   $("iTx").classList.toggle("hid",!(s&&s.is_in_tx));
-  $("iTx").className="lcd-ic tx"+((s&&s.is_in_tx)?"":" hid");
-  $("iRx").classList.toggle("hid",!(s&&s.is_in_rx));
+  $("iBusy").classList.toggle("hid",!(s&&(s.is_in_rx||s.is_sq)&&!s.is_in_tx));
   $("iScan").classList.toggle("hid",!(s&&s.is_scan));
   $("iDw").classList.toggle("hid",!(st&&st.double_channel));
   if(st&&st.double_channel)$("iDw").textContent="DW·"+(st.double_channel===1?"A":"B");
+  const regName=(s&&s.curr_region>=0&&state.region_names&&state.region_names[s.curr_region])||null;
+  $("iReg").classList.toggle("hid",!regName);
+  if(regName)$("iReg").textContent="["+regName.toUpperCase().slice(0,8).trim()+"]";
   $("iGps").classList.toggle("hid",!(s&&s.is_gps_locked));
   $("iBt").classList.toggle("hid",!conn);
   $("iVol").textContent="VOL "+(state.volume??"–");
-  $("iSql").textContent="SQL "+(st?st.squelch_level??"–":"–");
+  $("iSql").textContent="SQL "+(st?(st.squelch_level??"–"):"–");
   const pct=state.battery_pct;
-  $("iBatt").textContent=pct==null?"▯▯▯▯":
-    "▮".repeat(Math.max(1,Math.round(pct/25)))+"▯".repeat(4-Math.max(1,Math.round(pct/25)))+" "+pct+"%";
-  // VFO lines
+  const bars=pct==null?0:Math.max(pct>0?1:0,Math.round(pct/25));
+  [...$("iBattBox").children].forEach((b,i)=>b.classList.toggle("on",i<bars));
+  $("iBattPct").textContent=pct==null?"":pct+"%";
+  // hardware key lights
+  $("kDw").classList.toggle("lit",!!(st&&st.double_channel));
+  $("kDw").textContent=st&&st.double_channel?("DW·"+(st.double_channel===1?"A":"B")):"DW";
+  $("kScan").classList.toggle("lit",!!(s?s.is_scan:st&&st.scan));
+  // VFO rows — the "current" VFO gets the highlight + live meter.
+  // Prefer an exact curr_ch_id match; some firmware reports 0 there,
+  // so fall back to the dual-watch selection (1=A, 2=B), then A.
   const cur=s?s.curr_ch_id:-1;
+  let curVfo=null;
+  if(st&&s){
+    if(st.channel_a===cur)curVfo="a";
+    else if(st.channel_b===cur)curVfo="b";
+    else curVfo=(s.double_channel===2?"b":"a");
+  }
   for(const [vfo,el] of [["a","A"],["b","B"]]){
     const chId=st?st["channel_"+vfo]:null;
     const c=chId!=null?chOf(chId):null;
-    const isCur=chId!=null&&chId===cur;
-    $("lcd"+el+"Name").textContent=
-      (chId!=null?("CH"+String(chId+1).padStart(2,"0")+" "):"")+
-      (c?(c.name||""):"");
-    $("lcd"+el+"Freq").textContent=c?mhz(c.rx_freq):"———.————";
-    $("lcd"+el+"Info").textContent=toneSub(c);
-    $("arr"+el).textContent=isCur?"▶":"";
-    const box=$("lcd"+el);
-    box.className="lcd-vfo"+(isCur?" active":"")+
-      (isCur&&s&&s.is_in_tx?" txing":(isCur&&s&&s.is_in_rx?" rxing":""));
+    const isCur=vfo===curVfo;
+    $("lcd"+el+"Ch").textContent=chId!=null?"CH "+String(chId+1).padStart(2,"0"):"";
+    $("lcd"+el+"Name").textContent=c&&c.name?c.name.toUpperCase():(c?mhz(c.rx_freq)+" M":"----------");
+    const f=c?fmtSegFreq(c.rx_freq):null;
+    $("lcd"+el+"Freq").innerHTML=(f||"---.----")+'<span class="mhz">MHz</span>';
+    $("lcd"+el+"Ghost").textContent="888.8888";
+    $("lcd"+el+"Flags").textContent=vfoFlags(c);
+    $("cur"+el).classList.toggle("hid",!isCur);
+    $("lcd"+el).classList.toggle("active",isCur);
+    // meter targets: the radio reports one RSSI — it belongs to the current ch
+    const m=SM[vfo];
+    m.tx=!!(isCur&&s&&s.is_in_tx);
+    m.target=(isCur&&s&&s.rssi>=0&&(s.is_in_rx||s.is_sq))?s.rssi:
+             (isCur&&s&&s.rssi>=0?Math.min(s.rssi,1):0);
   }
   // footer
   let foot=[];
-  if(!conn)foot.push("not connected");
+  if(!conn)foot.push(DEMO?"DEMO MODE — simulated radio":"not connected");
   else{
-    if(s&&s.rssi>=0)foot.push("RSSI "+"▂▃▄▅▆▇█".slice(0,Math.max(1,Math.ceil(s.rssi/2)))+" "+s.rssi);
-    if(s&&s.curr_region>=0)foot.push("region "+s.curr_region);
-    if(state.battery_voltage)foot.push(state.battery_voltage.toFixed(2)+" V");
+    if(s&&s.rssi>=0)foot.push(`RSSI <b>${s.rssi}</b>/15`);
+    if(state.battery_voltage)foot.push(`<b>${state.battery_voltage.toFixed(2)}</b> V`);
     if(state.bss&&state.bss.aprs_callsign)
-      foot.push(state.bss.aprs_callsign+(state.bss.aprs_ssid?"-"+state.bss.aprs_ssid:""));
+      foot.push("<b>"+esc(state.bss.aprs_callsign+(state.bss.aprs_ssid?"-"+state.bss.aprs_ssid:""))+"</b>");
     if(state.transport)foot.push(state.transport.toUpperCase());
+    if(DEMO)foot.push("DEMO");
   }
-  $("lcdFoot").innerHTML=foot.map(esc).map(f=>`<span>${f}</span>`).join("");
+  $("lcdFoot").innerHTML=foot.map(f=>`<span>${f}</span>`).join("");
+}
+
+/* -------- hardware key row actions -------- */
+function activeVfo(){
+  const st=state.settings,s=state.ht_status;
+  if(st&&s&&s.curr_ch_id===st.channel_b)return"b";
+  return"a";
+}
+async function cycleDualWatch(){
+  const cur=(state.settings&&state.settings.double_channel)||0;
+  const v=(cur+1)%3;
+  try{await post("/api/settings",{updates:{double_channel:v}});
+    state.settings.double_channel=v;renderSettings();}
+  catch(e){logLine("dual watch: "+e.message);}
+}
+async function toggleScan(){
+  const v=(state.settings&&state.settings.scan)?0:1;
+  try{await post("/api/settings",{updates:{scan:v}});
+    state.settings.scan=v;renderSettings();}
+  catch(e){logLine("scan: "+e.message);}
+}
+async function swapAB(){
+  const st=state.settings;if(!st)return;
+  const a=st.channel_a??0,b=st.channel_b??0;
+  try{
+    await post("/api/select",{vfo:"a",channel:b});
+    await post("/api/select",{vfo:"b",channel:a});
+    st.channel_a=b;st.channel_b=a;renderSettings();
+    logLine("VFO A ⇄ B");
+  }catch(e){logLine("A/B swap: "+e.message);}
+}
+async function stepCh(delta){
+  const st=state.settings;if(!st)return;
+  const vfo=activeVfo();
+  const count=(state.dev_info&&state.dev_info.channel_count)||32;
+  const cur=st[vfo==="a"?"channel_a":"channel_b"]??0;
+  const next=(cur+delta+count)%count;
+  await selectCh(vfo,next);
 }
 function renderHeader(){
   const c=state.connected;
@@ -642,11 +958,24 @@ function renderActive(){
   $("activeChans").innerHTML=html;
 }
 function renderDevInfo(){
-  const d=state.dev_info;if(!d){$("devInfo").textContent="";return;}
-  $("devInfo").textContent=
-    `product ${d.product_id} hw ${d.hw_ver} fw ${d.soft_ver} · `+
-    `${d.channel_count} channels`+(d.support_vfo?" · VFO":"")+
-    (d.support_dmr?" · DMR":"")+(d.support_noaa?" · NOAA":"");
+  const d=state.dev_info, card=$("radioInfoCard");
+  const di=$("devInfo");
+  if(!d){if(card)card.style.display="none";if(di)di.textContent="";return;}
+  if(card)card.style.display="";
+  $("riName").textContent=state.device_name||("product "+d.product_id);
+  const tiles=[
+    ["Firmware","v"+d.soft_ver],["Hardware","v"+d.hw_ver],
+    ["Channels",d.channel_count],["Freq ranges",d.freq_range_count],
+    ["Regions",d.region_count],["Link",(state.transport||"?").toUpperCase()],
+  ];
+  $("riGrid").innerHTML=tiles.map(([k,v])=>
+    `<div class="stat"><div class="v">${esc(String(v))}</div><div class="k">${esc(k)}</div></div>`).join("");
+  const caps=[["VFO",d.support_vfo],["Dual VFO",d.support_vfo],["DMR",d.support_dmr],
+    ["NOAA",d.support_noaa],["GMRS",d.gmrs],["FM radio",d.support_radio],
+    ["Med power",d.support_medium_power],["HM speaker",d.have_hm_speaker]];
+  $("riCaps").innerHTML=caps.map(([k,on])=>
+    `<span class="badge${on?" on":""}" style="opacity:${on?1:.35}">${on?"✓":"✗"} ${esc(k)}</span>`).join("");
+  if(di)di.textContent=`product ${d.product_id} hw ${d.hw_ver} fw ${d.soft_ver} · ${d.channel_count} channels`;
 }
 function flags(c){
   const f=[];if(c.tx_disable)f.push("TXD");if(c.bclo)f.push("BCLO");
@@ -861,6 +1190,21 @@ const SET_MAP=[  // [element id, settings field, kind]
  ["sShareCh","auto_share_loc_ch","num"],
  ["sKiss","kiss_en","bool"],["sKissUp","kiss_upload_tx_msg","bool"],
  ["sKissDelay","kiss_tx_delay","num"],["sKissTail","kiss_tx_tail","num"],
+ // --- newly exposed: Bluetooth audio ---
+ ["sHmSpeaker","hm_speaker","num"],["sAghfpCall","aghfp_call_mode","bool"],
+ ["sAudioRelay","audio_relay_en","bool"],["sKeepAghfp","keep_aghfp_link","bool"],
+ ["sAdaptResp","adaptive_response","bool"],
+ // --- system ---
+ ["sPairPwrOn","pairing_at_power_on","bool"],["sLeadSync","leading_sync_bit_en","bool"],
+ // --- GPS/position ---
+ ["sCustomLoc","use_custom_location","bool"],["sGpwpl","gpwpl_upload_en","bool"],
+ // --- RF / channel ---
+ ["sVfo1Pwr","vfo1_tx_power_x","num"],["sVfo2Pwr","vfo2_tx_power_x","num"],
+ ["sFreqRange2","use_freq_range_2","bool"],["sDisDigMute","dis_digital_mute","bool"],
+ ["sEccEn","signaling_ecc_en","bool"],["sChDataLock","ch_data_lock","bool"],
+ ["sModFreq","vfo1_mod_freq_x","bool"],
+ // --- weather ---
+ ["sWxMode","wx_mode","num"],["sNoaaCh","noaa_ch","num"],
 ];
 function renderSettingsTab(){
   const st=state.settings;if(!st){$("setRaw").textContent="Not connected / no settings read yet.";return;}
@@ -943,6 +1287,93 @@ async function saveSettingsTab(){
   }catch(e){alert("write failed: "+e.message);}
 }
 
+/* ---------------- programmable buttons (PF) ---------------- */
+const PF_GESTURES=[[6,"press"],[8,"single"],[4,"double"],[2,"long"]];
+let pfValid=null;
+function renderPf(){
+  const tb=$("pfTable").querySelector("tbody");
+  const pf=state.pf;
+  $("pfEmpty").style.display=pf&&pf.length?"none":"";
+  $("pfSave").disabled=!(pf&&pf.length);
+  if(!pf||!pf.length){tb.innerHTML="";return;}
+  // until GET_PF_ACTIONS arrives, offer at least the effects already in use
+  const valid=pfValid||[...new Map(pf.map(e=>[e.effect,{code:e.effect,
+    name:e.effect_name}])).values()].sort((a,b)=>a.code-b.code);
+  const byKey={};for(const e of pf)byKey[e.key]=e;
+  const label=n=>n.replace(/^TOGGLE_/,"").replaceAll("_"," ").toLowerCase();
+  let html="";
+  const buttons=[...new Set(pf.map(e=>e.button))].sort();
+  for(const b of buttons){
+    html+=`<tr><td><b>BTN ${b+1}</b></td>`;
+    for(const [act] of PF_GESTURES){
+      const key=(b<<4)|act, e=byKey[key];
+      if(!e){html+="<td class='dimtxt'>–</td>";continue;}
+      html+=`<td><select data-key="${key}" style="max-width:130px">`+
+        valid.map(v=>`<option value="${v.code}"${v.code===e.effect?" selected":""}>`+
+          `${esc(label(v.name))}</option>`).join("")+"</select></td>";
+    }
+    html+="</tr>";
+  }
+  tb.innerHTML=html;
+}
+async function loadPf(refresh){
+  try{
+    const r=await api("/api/pf?refresh="+(refresh?1:0));
+    state.pf=r.pf;pfValid=r.valid_effects;renderPf();
+    logLine("button map read ("+r.pf.length+" slots)");
+  }catch(e){logLine("buttons: "+e.message);}
+}
+async function savePf(){
+  const effects={};
+  for(const sel of $("pfTable").querySelectorAll("select"))
+    effects[sel.dataset.key]=Number(sel.value);
+  try{
+    const r=await post("/api/pf",{effects});
+    state.pf=r.pf;renderPf();logLine("button map written to radio");
+  }catch(e){alert("write failed: "+e.message);}
+}
+
+/* ---------------- FM broadcast / regions ---------------- */
+function renderFmRegion(){
+  const d=state.dev_info;
+  $("fmRow").style.display=d&&d.support_radio?"":"none";
+  const names=state.region_names||[];
+  $("regionRow").style.display=names.length>1?"":"none";
+  if(names.length>1){
+    const cur=state.ht_status?state.ht_status.curr_region:-1;
+    $("regionSel").innerHTML=names.map((n,i)=>
+      `<option value="${i}"${i===cur?" selected":""}>${esc(n)||("zone "+(i+1))}</option>`).join("");
+  }
+  const fm=state.fm;
+  if(fm){
+    for(const b of $("fmSeg").children)
+      b.classList.toggle("on",Number(b.dataset.v)===(fm.is_on?1:0));
+    $("fmFreq").textContent=fm.freq_hz?(fm.freq_hz/1e6).toFixed(1)+" MHz":"–";
+  }
+}
+$("fmSeg").addEventListener("click",async e=>{
+  if(e.target.dataset.v===undefined)return;
+  try{await post("/api/fm/power/"+e.target.dataset.v);
+    setTimeout(loadFm,600);}
+  catch(err){logLine("fm: "+err.message);}
+});
+async function loadFm(){
+  try{state.fm=await api("/api/fm");renderFmRegion();}
+  catch(e){/* radio without FM */}
+}
+async function fmSeek(dir){
+  try{await post("/api/fm/seek/"+dir);logLine("FM seek "+dir);
+    setTimeout(loadFm,2500);}
+  catch(e){logLine("fm seek: "+e.message);}
+}
+async function setRegion(i){
+  try{await post("/api/region/"+i);
+    logLine("region switch → "+(state.region_names[i]||i)+
+      " (radio reloads channels)");
+    setTimeout(()=>{loadChannels(1);refresh();},1500);
+  }catch(e){logLine("region: "+e.message);}
+}
+
 /* ---------------- actions ---------------- */
 async function connectRadio(){
   const mac=$("macInput").value.trim();
@@ -955,7 +1386,22 @@ async function connectRadio(){
   }catch(e){logLine("connect failed: "+e.message);}
 }
 async function disconnectRadio(){
-  await post("/api/disconnect");state.connected=false;renderHeader();
+  await post("/api/disconnect");
+  state.connected=false;renderHeader();
+  $("autoConnChk").checked=false;   // disconnect also clears auto-connect
+}
+async function setAutoConnect(on){
+  try{await post("/api/auto_connect/"+(on?1:0));
+    logLine("auto-connect "+(on?"enabled":"disabled"));
+  }catch(e){logLine("auto-connect toggle failed: "+e.message);}
+}
+async function loadConnConfig(){
+  try{
+    const c=await api("/api/config");
+    if(c.mac&&!$("macInput").value)$("macInput").value=c.mac;
+    if(c.transport)$("transportSel").value=c.transport;
+    $("autoConnChk").checked=!!c.auto_connect;
+  }catch(e){/* not fatal */}
 }
 async function scanDevices(){
   $("btnScan").disabled=true;logLine("scanning for devices (10s) ...");
@@ -1070,7 +1516,64 @@ async function saveChannel(){
   }catch(e){alert("write failed: "+e.message);}
 }
 
-openWs();
+/* ---------------- demo mode (?demo=1) ----------------
+   Simulated radio state so the LCD/S-meter can be exercised with no
+   hardware. Clearly labelled DEMO; websocket updates are ignored. */
+function startDemo(){
+  state.connected=true;state.transport="demo";
+  state.device_name="VR-N7600";
+  state.dev_info={product_id:1,hw_ver:1,soft_ver:147,channel_count:32,
+    freq_range_count:5,region_count:6,support_vfo:true,support_dmr:false,
+    support_noaa:true,gmrs:false,support_radio:true,support_medium_power:true,
+    have_hm_speaker:true};
+  state.channels=[
+    {channel_id:1,name:"CARS RPT",rx_freq:145587500,tx_freq:145587500,
+     rx_mod:0,tx_mod:0,rx_sub_audio:10350,tx_sub_audio:10350,scan:true,
+     bandwidth_wide:false,tx_at_max_power:true,tx_at_med_power:false},
+    {channel_id:4,name:"MB7UC",rx_freq:144962500,tx_freq:144962500,
+     rx_mod:0,tx_mod:0,rx_sub_audio:0,tx_sub_audio:0,scan:true,
+     bandwidth_wide:true,tx_at_max_power:false,tx_at_med_power:false},
+  ];
+  state.settings={channel_a:1,channel_b:4,double_channel:1,scan:0,
+    squelch_level:3};
+  state.volume=8;state.battery_pct=76;state.battery_voltage=8.21;
+  state.bss={aprs_callsign:"M7RAB",aprs_ssid:7};
+  state.region_names=["EU","US","JP","CN","AU","BR"];
+  state.pf=null;
+  let t=0;
+  setInterval(()=>{
+    t+=0.4;
+    // wandering signal with squelch behaviour
+    const sig=Math.max(0,Math.round(7+5*Math.sin(t/2)+3*Math.sin(t*1.7)
+      +(Math.random()*2-1)));
+    const openSq=sig>=4;
+    state.ht_status={is_power_on:true,is_in_tx:false,is_sq:openSq,
+      is_in_rx:openSq,double_channel:1,is_scan:false,is_radio:false,
+      curr_ch_id:1,is_gps_locked:true,is_hfp_connected:false,
+      is_aoc_connected:true,rssi:Math.min(15,sig),curr_region:0};
+    renderStatus();
+  },400);
+  // the radio's actual button map (captured live 2026-07-15)
+  const demoFx=[[6,0],[8,21],[4,23],[2,18],[22,0],[24,22],[20,0],[18,3],
+    [38,0],[40,8],[36,0],[34,0],[54,0],[56,7],[52,0],[50,0]];
+  const AN={2:"LONG",4:"DOUBLE",6:"PRESS",8:"SINGLE"};
+  const FX={0:"DISABLE",3:"TOGGLE_OFFLINE",7:"PREV_CHANNEL",8:"NEXT_CHANNEL",
+    18:"TOGGLE_AB_CH",21:"VOL_DOWN",22:"VOL_UP",23:"TOGGLE_MUTE"};
+  state.pf=demoFx.map(([k,e])=>({key:k,button:k>>4,action:k&15,
+    action_name:AN[k&15]||String(k&15),effect:e,effect_name:FX[e]||"FX"+e}));
+  pfValid=[0,1,2,3,5,7,8,9,12,13,15,16,17,18,19,21,22,23].map(c=>
+    ({code:c,name:FX[c]||["","ALARM","ALARM_AND_MUTE","","","TOGGLE_TX_POWER","",
+      "","","T_CALL","","","TOGGLE_CH_SCAN","MAIN_PTT","","TOGGLE_MONITOR",
+      "BT_PAIRING","TOGGLE_DOUBLE_CH","","SEND_LOCATION"][c]||"FX"+c}));
+  renderAll();
+  logLine("DEMO mode — simulated radio, nothing is connected");
+}
+
+/* ---------------- startup ---------------- */
+buildSMeters();
+try{setLcdTheme(localStorage.getItem("lcdTheme")||"amber");}catch(e){}
+if(DEMO){startDemo();}
+else{openWs();loadConnConfig();}
 </script>
 </body>
 </html>

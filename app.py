@@ -1,10 +1,10 @@
 """VR-N7600 web control — FastAPI bridge between browser and Bluetooth radio.
 
-Run:  python3 app.py   (serves on 0.0.0.0:8084)
+Run:  python3 app.py   (serves on 0.0.0.0:8099)
 
 Config in config.json:
   { "mac": "AA:BB:CC:DD:EE:FF", "transport": "auto",
-    "rfcomm_channel": null, "port": 8084, "auto_connect": true }
+    "rfcomm_channel": null, "port": 8099, "auto_connect": true }
 """
 
 import asyncio
@@ -26,16 +26,25 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("app")
 
-BASE = pathlib.Path(__file__).parent
-CONFIG_PATH = BASE / "config.json"
+import sys
+if getattr(sys, "frozen", False):
+    # packaged (PyInstaller): static files are unpacked to _MEIPASS (read-only);
+    # config lives next to the executable so it stays writable across runs.
+    BASE = pathlib.Path(sys._MEIPASS)
+    DATA_DIR = pathlib.Path(sys.executable).parent
+else:
+    BASE = pathlib.Path(__file__).parent
+    DATA_DIR = BASE
+CONFIG_PATH = DATA_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "mac": "",
-    "transport": "auto",       # auto | ble | rfcomm
+    "transport": "ble",        # auto | ble | rfcomm — user picks and presses Connect
     "rfcomm_channel": None,
-    "port": 8084,
-    "auto_connect": True,
-    "status_poll_seconds": 30,
+    "port": 8099,
+    "auto_connect": False,     # off by default; opt-in via the Connect card
+    "status_poll_seconds": 15,  # doubles as keep-alive; keep < radio idle timeout
+    "rf_poll_seconds": 2,      # fast HT-status poll for the live S-meter
 }
 
 
@@ -81,18 +90,25 @@ async def connect_radio() -> None:
 
 
 async def keeper():
-    """Auto-connect / reconnect loop and periodic status poll."""
+    """Keep the ACTIVE link solid: while connected, poll status regularly —
+    this doubles as a keep-alive so the radio doesn't idle the link out.
+    No reconnect loops: connecting is always the user's explicit action
+    (the one exception: the opt-in "auto-connect on startup" checkbox gets a
+    single attempt at startup, nothing after)."""
+    startup_attempted = False
     last_poll = 0.0
+    last_rf = 0.0
     while True:
         try:
-            if config.get("auto_connect") and config.get("mac") \
-                    and not radio.connected:
-                log.info("auto-connecting to %s ...", config["mac"])
+            if (not startup_attempted and config.get("auto_connect")
+                    and config.get("mac") and not radio.connected):
+                startup_attempted = True
+                log.info("startup connect (opt-in) to %s ...", config["mac"])
                 try:
                     await connect_radio()
                     await broadcast("snapshot", radio.snapshot())
                 except Exception as e:
-                    log.info("auto-connect failed: %s", e)
+                    log.info("startup connect failed: %s", e)
             elif radio.connected:
                 loop_t = asyncio.get_running_loop().time()
                 if loop_t - last_poll > config.get("status_poll_seconds", 30):
@@ -105,9 +121,22 @@ async def keeper():
                         "battery_pct": radio.battery_pct,
                         "battery_voltage": radio.battery_voltage,
                     })
+                elif (ws_clients and
+                      loop_t - last_rf > config.get("rf_poll_seconds", 2)):
+                    # light-weight fast poll: only when a browser is watching.
+                    # GET_HT_STATUS carries the radio's own RSSI (S-meter);
+                    # READ_RF_STATUS raw rides along as RE material.
+                    last_rf = loop_t
+                    await radio.refresh_ht_status()
+                    raw = await radio.read_rf_status_raw()
+                    await broadcast("rf", {
+                        "ht_status": bp.struct_dict(radio.ht_status)
+                        if radio.ht_status else None,
+                        "rf_raw": raw.hex(" ") if raw else None,
+                    })
         except Exception as e:
             log.warning("keeper: %s", e)
-        await asyncio.sleep(15)
+        await asyncio.sleep(1)
 
 
 @asynccontextmanager
@@ -174,6 +203,15 @@ async def api_disconnect():
     return {"connected": False}
 
 
+@app.get("/api/config")
+async def api_get_config():
+    """Connection config the UI needs to pre-fill the picker."""
+    return {"mac": config.get("mac", ""),
+            "transport": config.get("transport", "ble"),
+            "auto_connect": bool(config.get("auto_connect", False)),
+            "port": config.get("port", 8099)}
+
+
 @app.post("/api/auto_connect/{on}")
 async def api_auto_connect(on: int):
     config["auto_connect"] = bool(on)
@@ -184,6 +222,114 @@ async def api_auto_connect(on: int):
 def require_connected():
     if not radio.connected:
         raise HTTPException(409, "radio not connected")
+
+
+class DebugCmdBody(BaseModel):
+    cmd: int                      # command id (BASIC group)
+    payload_hex: str = ""
+    timeout: float = 3.0
+
+
+@app.post("/api/debug/command")
+async def api_debug_command(body: DebugCmdBody):
+    """Send a raw command over the ALREADY-OPEN link and return the raw reply.
+    Lets us probe/RE the protocol without opening a second (colliding) BT
+    connection to the radio."""
+    require_connected()
+    try:
+        payload = bytes.fromhex(body.payload_hex.replace(" ", ""))
+    except ValueError:
+        raise HTTPException(400, "payload_hex is not valid hex")
+    try:
+        reply = await radio.raw_command(body.cmd, payload, body.timeout)
+    except Exception as e:
+        raise HTTPException(502, f"{type(e).__name__}: {e}")
+    try:
+        name = bp.Cmd(body.cmd).name
+    except ValueError:
+        name = f"0x{body.cmd:04x}"
+    return {"cmd": body.cmd, "cmd_name": name,
+            "payload_sent": payload.hex(" "),
+            "reply_hex": reply.hex(" "),
+            "reply_len": len(reply),
+            "status": reply[0] if reply else None}
+
+
+@app.get("/api/pf")
+async def api_get_pf(refresh: int = 0):
+    """Programmable-button map: 4 buttons x 4 gestures -> effect codes."""
+    require_connected()
+    if refresh or radio.pf is None:
+        await radio.get_pf()
+    try:
+        valid = await radio.get_pf_actions()
+    except Exception:
+        valid = sorted(bp.PF_EFFECT_NAMES)
+    return {"pf": radio.pf,
+            "valid_effects": [{"code": c, "name": bp.pf_effect_name(c)}
+                              for c in valid]}
+
+
+class PfBody(BaseModel):
+    # {key(int as str or int): effect} overrides, e.g. {"6": 21}
+    effects: dict[int, int]
+
+
+@app.post("/api/pf")
+async def api_set_pf(body: PfBody):
+    require_connected()
+    try:
+        pf = await radio.set_pf(body.effects)
+    except bp.CommandFailed as e:
+        raise HTTPException(502, str(e))
+    await broadcast("pf", pf)
+    return {"pf": pf}
+
+
+@app.get("/api/fm")
+async def api_fm_status():
+    require_connected()
+    try:
+        return bp.struct_dict(await radio.fm_status())
+    except bp.CommandFailed as e:
+        raise HTTPException(502, str(e))
+
+
+@app.post("/api/fm/power/{on}")
+async def api_fm_power(on: int):
+    require_connected()
+    await radio.fm_set_power(bool(on))
+    return {"ok": True}
+
+
+@app.post("/api/fm/seek/{direction}")
+async def api_fm_seek(direction: str):
+    require_connected()
+    await radio.fm_seek(direction == "up")
+    return {"ok": True}
+
+
+@app.post("/api/fm/freq/{khz}")
+async def api_fm_freq(khz: int):
+    require_connected()
+    await radio.fm_set_freq(khz * 1000)
+    return {"ok": True}
+
+
+@app.get("/api/regions")
+async def api_regions(refresh: int = 0):
+    require_connected()
+    if refresh or not radio.region_names:
+        await radio.read_region_names()
+    cur = radio.ht_status.curr_region if radio.ht_status else -1
+    return {"names": radio.region_names, "current": cur}
+
+
+@app.post("/api/region/{region}")
+async def api_set_region(region: int):
+    require_connected()
+    await radio.set_region(region)
+    return {"ok": True}
 
 
 @app.get("/api/channels")
@@ -415,4 +561,4 @@ async def ws_endpoint(ws: WebSocket):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=int(config.get("port", 8084)))
+    uvicorn.run(app, host="0.0.0.0", port=int(config.get("port", 8099)))

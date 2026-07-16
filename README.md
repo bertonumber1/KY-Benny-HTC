@@ -10,7 +10,7 @@ on the network — no phone app, no channel-binding to a second device.
 ## Run
 
 ```
-python3 app.py            # http://<pi>:8084
+python3 app.py            # http://<pi>:8099
 ```
 
 or install the service:
@@ -72,7 +72,7 @@ but the radio + this bridge.
 - `radio.py` — async client: bleak GATT + AF_BLUETOOTH RFCOMM transports,
   request/reply matching, event notifications, APRS send/receive.
 - `app.py` — FastAPI: REST + WebSocket push + static UI. Port in
-  `config.json` (default 8084).
+  `config.json` (default 8099).
 
 ## Credits
 

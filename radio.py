@@ -177,6 +177,7 @@ class Radio:
         self.transport_kind = None
         self.mac = None
         self.dev_info: DevInfo | None = None
+        self.device_name: str | None = None
         self.settings: Settings | None = None
         self.ht_status: HTStatus | None = None
         self.channels: dict[int, Channel] = {}
@@ -184,6 +185,10 @@ class Radio:
         self.battery_pct: int | None = None
         self.battery_voltage: float | None = None
         self.position: Position | None = None
+        self.pf: list[dict] | None = None
+        self.fm: bp.FmStatus | None = None
+        self.region_names: list[str] = []
+        self.rf_status_raw: bytes | None = None
         self.connected = False
         self.event_cb = None          # async callable(kind, data-dict)
         self._pending: dict[int, asyncio.Future] = {}
@@ -265,6 +270,27 @@ class Radio:
                 raise CommandFailed(int(cmd), reply[0])
             return reply
 
+    async def raw_command(self, cmd_id: int, payload: bytes = b"",
+                          timeout: float = 3.0) -> bytes:
+        """Send an arbitrary BASIC-group command over the LIVE link and return
+        the raw reply (no success-byte check). For protocol probing/debug so we
+        never need a second competing connection to the radio."""
+        if not self.transport:
+            raise ConnectionError("not connected")
+        async with self._cmd_lock:
+            fut = asyncio.get_running_loop().create_future()
+            self._pending[cmd_id] = fut
+            gap = time.monotonic() - self._last_write
+            if gap < 0.02:
+                await asyncio.sleep(0.02 - gap)
+            await self.transport.send(bp.GROUP_BASIC, cmd_id, payload)
+            self._last_write = time.monotonic()
+            try:
+                reply = await asyncio.wait_for(fut, timeout)
+            finally:
+                self._pending.pop(cmd_id, None)
+        return reply
+
     def _on_frame(self, group: int, cmd: int, payload: bytes):
         if group != bp.GROUP_BASIC:
             log.debug("frame group=%d cmd=0x%04x %s", group, cmd, payload.hex())
@@ -315,6 +341,15 @@ class Radio:
         self.dev_info = DevInfo.parse(
             await self._command(Cmd.GET_DEV_INFO, bytes([3])))
         log.info("dev info: %s", self.dev_info)
+        try:
+            did = await self._command(Cmd.GET_DID)
+            # device name is a null-terminated ASCII run inside the DID blob
+            runs = bytes(b if 32 <= b < 127 else 0 for b in did).split(b"\x00")
+            self.device_name = next(
+                (r.decode() for r in sorted(runs, key=len, reverse=True)
+                 if len(r) >= 3), None)
+        except Exception as e:  # noqa: BLE001
+            log.debug("device name read failed: %s", e)
         for ev in EVENTS_TO_REGISTER:
             try:
                 await self._command(Cmd.REGISTER_NOTIFICATION, bytes([int(ev)]),
@@ -327,6 +362,13 @@ class Radio:
                 await self._command(Cmd.READ_SETTINGS), 1)
         except (CommandFailed, ProtocolError, asyncio.TimeoutError) as e:
             log.warning("read settings: %s", e)
+        for name, coro in (("pf", self.get_pf()),
+                           ("regions", self.read_region_names()),
+                           ("fm", self.fm_status())):
+            try:
+                await coro
+            except Exception as e:  # noqa: BLE001 — all optional extras
+                log.debug("init %s: %s", name, e)
         self._emit("connection", {"connected": True})
 
     async def refresh_status(self):
@@ -354,6 +396,15 @@ class Radio:
             self.battery_voltage = int.from_bytes(r[3:5], "big") / 1000.0
         except (CommandFailed, asyncio.TimeoutError, IndexError):
             pass
+
+    async def refresh_ht_status(self) -> HTStatus | None:
+        """Light-weight status-only poll (carries the radio's RSSI)."""
+        try:
+            self.ht_status = HTStatus.parse(
+                await self._command(Cmd.GET_HT_STATUS), 1)
+        except (CommandFailed, ProtocolError, asyncio.TimeoutError) as e:
+            log.debug("ht status poll: %s", e)
+        return self.ht_status
 
     async def read_channel(self, ch_id: int) -> Channel:
         r = await self._command(Cmd.READ_RF_CH, bytes([ch_id]))
@@ -423,6 +474,75 @@ class Radio:
         self.position = Position.parse(r, 1)
         return self.position
 
+    # ------------------------------------------------ programmable buttons
+
+    async def get_pf(self) -> list[dict]:
+        r = await self._command(Cmd.GET_PF)
+        self.pf = bp.parse_pf(r)
+        return self.pf
+
+    async def get_pf_actions(self) -> list[int]:
+        """Effect codes this firmware supports (0 = unassigned)."""
+        r = await self._command(Cmd.GET_PF_ACTIONS)
+        return sorted(set(r[1:]) | {0})
+
+    async def set_pf(self, effects_by_key: dict[int, int]) -> list[dict]:
+        current = self.pf or await self.get_pf()
+        payload = bp.build_set_pf(effects_by_key, current)
+        await self._command(Cmd.SET_PF, payload)
+        return await self.get_pf()
+
+    # ------------------------------------------------- FM broadcast radio
+
+    async def fm_status(self) -> bp.FmStatus:
+        r = await self._command(Cmd.RADIO_GET_STATUS)
+        self.fm = bp.FmStatus.parse(r)
+        return self.fm
+
+    async def fm_set_power(self, on: bool):
+        await self._command(Cmd.RADIO_SET_MODE, bytes([1 if on else 0]),
+                            expect_reply=False)
+
+    async def fm_seek(self, up: bool):
+        await self._command(Cmd.RADIO_SEEK_UP if up else Cmd.RADIO_SEEK_DOWN,
+                            expect_reply=False)
+
+    async def fm_set_freq(self, freq_hz: int):
+        await self._command(Cmd.RADIO_SET_FREQ,
+                            (freq_hz // 10_000).to_bytes(2, "big"),
+                            expect_reply=False)
+
+    # ----------------------------------------------------- regions / zones
+
+    async def read_region_names(self) -> list[str]:
+        count = self.dev_info.region_count if self.dev_info else 0
+        names = []
+        for i in range(count):
+            try:
+                r = await self._command(Cmd.READ_REGION_NAME, bytes([i]))
+                names.append(r[2:].split(b"\x00")[0]
+                             .decode("gb2312", "replace").strip())
+            except (CommandFailed, ProtocolError, asyncio.TimeoutError):
+                break
+        self.region_names = names
+        return names
+
+    async def set_region(self, region: int):
+        await self._command(Cmd.SET_REGION, bytes([region]),
+                            expect_reply=False)
+
+    # ------------------------------------------------- live RF diagnostics
+
+    async def read_rf_status_raw(self) -> bytes | None:
+        """READ_RF_STATUS(52): 31B per-VFO RF levels, layout still being
+        RE'd — polled raw so every live session collects decode material."""
+        try:
+            r = await self._command(Cmd.READ_RF_STATUS, timeout=2.0)
+            self.rf_status_raw = r
+            return r
+        except (CommandFailed, ProtocolError, asyncio.TimeoutError):
+            return None
+
     # -------------------------------------------------------------- helpers
 
     def snapshot(self) -> dict:
@@ -430,6 +550,7 @@ class Radio:
             "connected": self.connected,
             "transport": self.transport_kind,
             "mac": self.mac,
+            "device_name": self.device_name,
             "dev_info": bp.struct_dict(self.dev_info) if self.dev_info else None,
             "ht_status": bp.struct_dict(self.ht_status) if self.ht_status else None,
             "settings": self.settings.fields if self.settings else None,
@@ -438,6 +559,9 @@ class Radio:
             "battery_voltage": self.battery_voltage,
             "position": bp.struct_dict(self.position) if self.position else None,
             "channels": [bp.struct_dict(c) for _, c in sorted(self.channels.items())],
+            "pf": self.pf,
+            "fm": bp.struct_dict(self.fm) if self.fm else None,
+            "region_names": self.region_names,
         }
 
 

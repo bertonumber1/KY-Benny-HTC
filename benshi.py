@@ -621,6 +621,98 @@ class Position:
         return p
 
 
+# -------------------------------------------------- programmable buttons (PF)
+
+# GET_PF reply = status + 16 x (key, effect) pairs; key = button<<4 | action.
+# SET_PF request = the 16 EFFECT bytes only, in PF_KEY_ORDER (verified live).
+PF_KEY_ORDER = [0x06, 0x08, 0x04, 0x02,
+                0x16, 0x18, 0x14, 0x12,
+                0x26, 0x28, 0x24, 0x22,
+                0x36, 0x38, 0x34, 0x32]
+
+PF_ACTION_NAMES = {
+    0: "INVALID", 1: "SHORT", 2: "LONG", 3: "VERY_LONG", 4: "DOUBLE",
+    5: "REPEAT", 6: "PRESS", 7: "RELEASE", 8: "SINGLE",
+    9: "LONG_RELEASE", 10: "VERY_LONG_RELEASE", 11: "VERY_VERY_LONG",
+    12: "VERY_VERY_LONG_RELEASE", 13: "TRIPLE",
+}
+
+PF_EFFECT_NAMES = {
+    0: "DISABLE", 1: "ALARM", 2: "ALARM_AND_MUTE", 3: "TOGGLE_OFFLINE",
+    4: "TOGGLE_RADIO_TX", 5: "TOGGLE_TX_POWER", 6: "TOGGLE_FM",
+    7: "PREV_CHANNEL", 8: "NEXT_CHANNEL", 9: "T_CALL", 10: "PREV_REGION",
+    11: "NEXT_REGION", 12: "TOGGLE_CH_SCAN", 13: "MAIN_PTT", 14: "SUB_PTT",
+    15: "TOGGLE_MONITOR", 16: "BT_PAIRING", 17: "TOGGLE_DOUBLE_CH",
+    18: "TOGGLE_AB_CH", 19: "SEND_LOCATION", 20: "ONE_CLICK_LINK",
+    21: "VOL_DOWN", 22: "VOL_UP", 23: "TOGGLE_MUTE",
+}
+
+
+def pf_effect_name(code: int) -> str:
+    return PF_EFFECT_NAMES.get(code, f"UNKNOWN_{code}")
+
+
+def parse_pf(payload: bytes) -> list[dict]:
+    """Decode a GET_PF reply payload (incl. status byte) into entries."""
+    out = []
+    data = payload[1:]
+    for i in range(0, len(data) - 1, 2):
+        key, effect = data[i], data[i + 1]
+        out.append({
+            "key": key,
+            "button": key >> 4,
+            "action": key & 0x0F,
+            "action_name": PF_ACTION_NAMES.get(key & 0x0F, str(key & 0x0F)),
+            "effect": effect,
+            "effect_name": pf_effect_name(effect),
+        })
+    return out
+
+
+def build_set_pf(effects_by_key: dict[int, int],
+                 current: list[dict]) -> bytes:
+    """SET_PF payload: 16 effect bytes in the radio's fixed key order,
+    starting from the current map and applying {key: effect} overrides."""
+    cur = {e["key"]: e["effect"] for e in current}
+    cur.update(effects_by_key)
+    return bytes(cur.get(k, 0) for k in PF_KEY_ORDER)
+
+
+# ------------------------------------------------------ FM broadcast radio
+
+@dataclass
+class FmStatus:
+    is_on: bool = False
+    is_seeking: bool = False
+    freq_hz: int = 0
+
+    @classmethod
+    def parse(cls, payload: bytes) -> "FmStatus":
+        # payload = status, flags, ?, freq_u16be (x10 kHz)
+        s = cls()
+        if len(payload) >= 2:
+            s.is_on = bool(payload[1] & 0x80)
+            s.is_seeking = bool(payload[1] & 0x10)
+        if len(payload) >= 5:
+            s.freq_hz = int.from_bytes(payload[3:5], "big") * 10_000
+        return s
+
+
+@dataclass
+class FreqModeStatus:
+    modulation: int = 0
+    freq_hz: int = 0
+
+    @classmethod
+    def parse(cls, payload: bytes) -> "FreqModeStatus":
+        s = cls()
+        if len(payload) >= 5:
+            v = int.from_bytes(payload[1:5], "big")
+            s.modulation = v >> 30
+            s.freq_hz = v & 0x3FFFFFFF
+        return s
+
+
 def sub_audio_text(v: int) -> str:
     if v == 0:
         return ""

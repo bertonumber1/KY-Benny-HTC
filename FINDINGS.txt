@@ -218,7 +218,253 @@ APRS tab now has a live map (roadmap item "APRS map view" — done).
     "fit stations" button + auto-fit on first data. Verified with test data.
 
 ------------------------------------------------------------------------
-7. OPEN QUESTIONS / TODO
+8. COVERAGE AUDIT — "every adjustable function must be in the web UI"
+------------------------------------------------------------------------
+Source of truth = the radio's GAIA command set (benshi.py), NOT the vendor
+app's rpc/ package. That package (sources/com/benshikj/ht/rpc) is almost all
+CLOUD/account stuff — auth tokens, users, messages, firmware download links,
+invite codes — i.e. exactly the telemetry/junk we are NOT building. Ignore it
+for control features; mirror only the radio command set.
+
+Settings block (Cmd READ_SETTINGS/WRITE_SETTINGS): 52 fields modeled.
+  - 25 exposed in the Settings tab
+  -  9 handled on Dashboard/elsewhere (channel a/b, scan, dual, squelch,
+       auto-share-ch)
+  - 18 MODELED BUT NOT YET IN THE UI  <-- close these first (no RE needed):
+       Bluetooth audio: aghfp_call_mode, audio_relay_en, keep_aghfp_link,
+                        hm_speaker, adaptive_response
+       RF / channel:    vfo1_tx_power_x, vfo2_tx_power_x, use_freq_range_2,
+                        dis_digital_mute, signaling_ecc_en, ch_data_lock,
+                        vfo1_mod_freq_x
+       Weather:         wx_mode, noaa_ch
+       System:          pairing_at_power_on, leading_sync_bit_en
+       GPS/position:    use_custom_location, gpwpl_upload_en
+
+Commands the radio has but benshi.py does NOT model yet (need RE vs real
+hardware — capture with btdebug and decode):
+       READ/WRITE_ADVANCED_SETTINGS (29/30)
+       READ/WRITE_ADVANCED_SETTINGS2 (63/64)
+       READ/WRITE_RDA1846S_AGC (37/38)
+
+AUDIO SYSTEM (voice) — not implemented. Radio side uses Bluetooth Hands-Free
+Profile (0000111F) + the aghfp_/audio_relay_/keep_aghfp_link settings above.
+Plan: bridge HFP SCO audio <-> browser (WebRTC/WS) with PTT keying.
+
+PHASED PLAN toward 100% coverage:
+  Phase 1 DONE (2026-07-15): exposed all 18 modeled-but-hidden settings in the
+    Settings tab (now 43 fields wired). Verified live: GET returns 18/18 from
+    the radio; Export/Import + Write cover them automatically. New groups:
+    Bluetooth audio, RF/channel, Weather; + system/GPS flags.
+  Phase 2: RE the ADVANCED_SETTINGS / AGC blocks (btdebug capture) and add.
+  Phase 3: audio system (HFP bridge + PTT).
+  Phase 4: full per-VFO / channel completeness pass + weather (WX/NOAA) tab.
+
+------------------------------------------------------------------------
+10. HOW THE APP STARTS  (desktop application, not a dev server)
+------------------------------------------------------------------------
+Three ways, simplest last:
+  a) Dev server:      python app.py           -> uvicorn on :8084, use browser
+  b) App launcher:    python launcher.py      -> starts the server in a thread
+        and opens the UI in its OWN native window (pywebview; WebView2 on
+        Windows, GTK/Qt on Linux). Falls back to the default browser if no
+        desktop webview. Closing the window stops the server.
+  c) Packaged app:    python build.py         -> dist/"VR-N7600 Remote".exe
+        A single-file, no-console, double-click desktop app (PyInstaller
+        --onefile --windowed). No Python needed on the target machine.
+        Linux build of the same script produces dist/"VR-N7600 Remote".
+
+Packaging notes:
+  - app.py is frozen-aware: when sys.frozen, static assets load from _MEIPASS
+    (bundled, read-only) and config.json is read/written next to the .exe
+    (writable, persists between runs). In dev both are the project dir.
+  - build.py bundles static/ and --collect-all bleak + webview (their platform
+    backends load dynamically). macOS/Android backend warnings are harmless.
+  - The server still binds 0.0.0.0:<port>, so phones / other LAN devices reach
+    the same UI at http://<machine>:<port> even when run as a desktop app.
+  - Default config (no file present) is now auto_connect=false, transport=ble.
+
+------------------------------------------------------------------------
+11b. PHASE 2 CAPTURE — unmodeled blocks (raw, 2026-07-15, BLE, live radio)
+------------------------------------------------------------------------
+Port is now 8099 (was 8084) everywhere.
+All three previously-unmodeled read commands respond. payload[0]=0x00 status.
+These are the raw structs to decode into benshi.py + expose in the UI (Phase 2):
+
+READ_ADVANCED_SETTINGS (29)  [123B]:
+ 00 40 69 40 89 80 90 00 92 00 88 02 26 81 ae 01 b8 41 2c 41 90 be be 13
+ 64 13 57 0d 0f 22 18 28 39 61 ff 26 19 1b 1d 1f 21 23 25 27 29 42 34 35
+ 1a bc ce ee ee 00 00 06 55 55 66 67 ff ff 01 44 45 54 ff ff ff f0 00 00
+ 00 06 55 55 56 6a ff ff f0 42 23 7f ff ff ff f0 00 00 00 0f ca 33 ab df
+ ff ff f0 00 25 40 00 00 00 00 00 97 8b ef ff fd 8a bb ac ef ff 00 00 00
+ 00 00 00
+
+READ_ADVANCED_SETTINGS2 (63) [61B]:
+ 00 40 69 40 89 80 88 00 e1 00 88 02 26 81 90 01 e0 41 2c 41 90 00 00 00
+ f0 00 00 65 56 60 00 00 00 00 00 10 03 46 74 24 42 44 64 56 66 00 29 25
+ 21 1d 18 15 12 0f 0b ff 4e 00 12 00 00
+
+READ_RDA1846S_AGC (37) [5B]:
+ 00 20 a2 e8 00
+
+Note: the first ~21 bytes of ADV_SETTINGS, ADV_SETTINGS2 and READ_FREQ_RANGE
+look identical (00 40 69 40 89 80 ...), i.e. a shared header / freq-range
+preamble — decode that once and reuse. Next: toggle known radio settings and
+re-capture to find which bytes/bits move (differential RE).
+
+STRUCTURAL DECODE (offline analysis of the captures above):
+  - READ_FREQ_RANGE == ADV_SETTINGS2[:21] EXACTLY. So ADV_SETTINGS2 =
+    [21B freq-range preamble] + [40B of ADV2-specific data].
+  - ADV_SETTINGS[:21] has the SAME layout but different values at bytes
+    6, 8, 14, 16 (90/92/ae/b8 vs 88/e1/90/e0) — a second instance of the
+    same range struct (RX vs TX, or range-set 2). Body after byte 21 (102B)
+    contains an arithmetic step-table at bytes 37..45 = 19 1b 1d 1f 21 23 25
+    27 29 (+2 each) — an RF/AGC calibration lookup table.
+  - DevInfo.freq_range_count = 5, so the 20 data bytes of FREQ_RANGE are
+    plausibly 5 ranges x 4 bytes; exact freq encoding still TBD (values don't
+    map to MHz as raw u16be — needs calibration vs the radio's real ranges).
+  - ALL blocks are STATIC across repeated reads (no volatile bytes) => they
+    are config/calibration, so any byte that changes between two captures is a
+    genuine setting change. Clean differential RE, no live-measurement noise.
+
+TOOL: adv_re.py  (capture / diff). Workflow to map a field:
+    python adv_re.py capture before
+    <change ONE setting ON THE RADIO or via the web UI>
+    python adv_re.py capture after
+    python adv_re.py diff captures/adv-before-*.json captures/adv-after-*.json
+  Baseline saved: captures/adv-baseline-*.json.
+
+BLOCKER for the live differential: the radio power-saves VERY aggressively and
+drops the BLE link within seconds of idle ("Device ... was not found"). To run
+the toggle-and-diff pass it must be kept awake (on charge + auto_power_off
+disabled, or actively held connected). This aggressive sleep is also the root
+cause of the intermittent connection drops seen throughout.
+
+------------------------------------------------------------------------
+11b. "PAIRING" TICKBOX + STAYING CONNECTED + PROBING THE LIVE LINK
+------------------------------------------------------------------------
+- The radio's on-screen "pairing" tickbox (~30 s) only matters for the FIRST
+  bond with a new device. Once bonded (Windows lists VR-N7600 as paired), it
+  is irrelevant — connecting reuses the stored bond. "Stay connected" does NOT
+  depend on it.
+- Keep-alive: the status poll doubles as a keep-alive so the link isn't idled
+  out. Tightened to 15 s (was 30) to sit under any idle timeout. Verified
+  2026-07-15: link held >45 s past connect, battery/status updating.
+- SINGLE-CONNECTION RULE: BLE (and classic) accept ONE connection at a time.
+  A separate btdebug/probe process CANNOT open a 2nd link while the webui holds
+  it — they collide. SOLUTION: probe THROUGH the live webui link:
+      POST /api/debug/command  {cmd:<int>, payload_hex:"", timeout:3.0}
+      -> {cmd_name, reply_hex, reply_len, status}
+  Backed by radio.raw_command() (raw reply, no success-check). Verified:
+  connected via UI, probed 3 advanced blocks, link still up afterwards.
+
+RAW ADVANCED BLOCKS captured over the live link (Phase 2 decode material):
+  READ_ADVANCED_SETTINGS (29)  123B:
+    00 40 69 40 89 80 90 00 92 00 88 02 26 81 ae 01 b8 41 2c 41 90 be be 13 ...
+  READ_ADVANCED_SETTINGS2 (63)  61B:
+    00 40 69 40 89 80 88 00 e1 00 88 02 26 81 90 01 e0 41 2c 41 90 00 00 00 f0 ...
+  READ_RDA1846S_AGC (37)  5B:  00 20 a2 e8 00
+  (byte[0]=00 = status OK. 29 and 63 share a ~21-byte header
+  "00 40 69 40 89 80 ..41 2c 41 90"; 63's header == READ_FREQ_RANGE 21B.
+  Same struct family — decode next.)
+
+------------------------------------------------------------------------
+11c. LIVE-LINK DISCOVERY SWEEP — juicy features to add
+------------------------------------------------------------------------
+Probed read commands through /api/debug/command on the live BLE link. What
+came back (status byte 00 stripped in notes):
+  GET_DID(54)       -> device NAME string "VR-N7600" (ASCII inside the blob).
+                       DONE: added radio.device_name + "Radio info" card
+                       (name, fw v147, hw v1, 32 ch, 5 ranges, 6 regions,
+                       capability badges from dev_info).
+  GET_POSITION(76)  -> 19B GPS blob (lat/lon; ff-padded when no fix). TODO:
+                       plot the radio's OWN position live on the APRS map.
+  GET_PF(55) 33B + GET_PF_ACTIONS(55->75) 31B -> programmable-function KEY
+                       map + available actions. TODO: remap the radio's
+                       physical buttons from the browser (SET_PF=56). Very
+                       HTCommander. Needs byte-layout decode.
+  READ_RF_STATUS(52) 31B -> live per-VFO RF levels. TODO: real S-meter.
+  READ_REGION_NAME(73) -> "Channel gr[oup]" zone/region names. TODO: zones UI.
+  FREQ_MODE_GET_STATUS(36) 15B, RADIO_GET_STATUS(24) 5B (broadcast FM radio),
+  GET_VOLUME(22), GET_APRS_PATH(72)="WIDE1-1,WIDE2-1", GET_REG_TIMES(3).
+  READ_FREQ_RANGE(39) 21B == the shared header of ADVANCED_SETTINGS 1/2.
+
+------------------------------------------------------------------------
+11d. PF (PROGRAMMABLE FUNCTION) KEYS — protocol DECODED & verified
+------------------------------------------------------------------------
+GET_PF(55) reply = status(00) + 16 (key_id, action) pairs (32 bytes).
+  Fixed key_id order (hardware slots):
+    06 08 04 02 16 18 14 12 26 28 24 22 36 38 34 32
+GET_PF_ACTIONS(75) reply = status + list of the VALID action codes:
+    01 02 17 13 0c 11 12 03 1b 1c 04 05 06 0f 18 19 1f 1d 1e 07 08 0a 0b
+    15 16 09 0d 0e 10 14   (0x00 = unassigned)
+SET_PF(56) request = the 16 ACTION bytes ONLY, in the fixed key order above
+  (NOT key/action pairs — sending pairs mis-writes it). Reply = status.
+  VERIFIED 2026-07-15: identity write, observed scramble, wrote correct
+  16-byte form, GET_PF restored byte-for-byte. Safe read/modify/write.
+Current radio map (action per key, key order above):
+  00 15 17 12 00 16 00 03 00 08 00 00 00 07 00 00
+TODO: action-code LABELS are not in the decompiled Java (res strings absent).
+  Map them empirically: set a key -> press it on the radio -> note behaviour.
+
+------------------------------------------------------------------------
+11e. 2026-07-16 SESSION — PF LABELS, FM RADIO, LIVE S-METER, RF_STATUS RE
+------------------------------------------------------------------------
+PF (55/56/75) FULLY LABELLED. Key byte = button<<4 | action_type.
+  Action types: 1 SHORT 2 LONG 3 VERY_LONG 4 DOUBLE 5 REPEAT 6 PRESS
+  (LOW_TO_HIGH) 7 RELEASE 8 SINGLE 13 TRIPLE. Effects 0-23 named (cross-
+  checked vs benlink, matches our empirical capture): see CAPABILITIES.md §2.
+  Radio advertises extra codes 0x18-0x1f (unknown, newer fw).
+  UI: Settings tab "Programmable buttons" panel; GET/POST /api/pf.
+  VERIFIED live: GET decodes; radio map = vol dn/up, mute, A/B, offline,
+  next/prev channel exactly as the physical buttons behave.
+
+FM BROADCAST RADIO decoded (cross-checked vs HTCommander):
+  RADIO_GET_STATUS(24) payload: [status][flags][?][freq u16be x10kHz]
+    flags: 0x80 = on, 0x10 = seeking
+  RADIO_SET_MODE(25) [on u8], RADIO_SEEK_UP/DOWN(26/27) no payload,
+  RADIO_SET_FREQ(28) [freq/10kHz u16be].
+  FREQ_MODE_GET_STATUS(36): payload[1..4] u32be = mod(2b)<<30 | freq Hz.
+  Endpoints: GET /api/fm, POST /api/fm/power|seek|freq. Dashboard row.
+
+REGIONS: READ_REGION_NAME(73) payload [i] -> [status][i][name gb2312];
+  this radio: region 0 = "Channel gr", 1-5 unnamed. GET /api/regions,
+  POST /api/region/{i}. SET_REGION(60) = [region u8], no reply.
+
+LIVE S-METER: keeper() now fast-polls every rf_poll_seconds (default 2 s,
+  only while a websocket client is attached): GET_HT_STATUS (the radio's
+  own 4-bit RSSI — same value its screen bars show) + READ_RF_STATUS raw,
+  broadcast as kind="rf". LCD S-meter = 15 segments, S1-9 + hot zone,
+  fast attack / slow decay / 1.2 s peak hold. Meter binds to the current
+  VFO (curr_ch_id match, falling back to dual-watch selection — this fw
+  reports curr_ch_id=0 while idle).
+
+READ_RF_STATUS(52) LIVE SAMPLES (idle, squelch closed, DW A/B) — 31B:
+  00 2c 2d 2f 3a 29 2b 87 00 02 80 20 00 60 00 00 00 3b 00 00 00 00 00 05 e0 00 00 01 40 50 00
+  00 27 28 2a 45 28 2a 07 00 02 80 20 00 60 00 00 00 3b 00 00 00 00 00 03 80 00 00 01 40 50 00
+  Provisional structure (14 distinct samples analysed):
+    b1        live level, wanders 0x22-0x2c            (rssi_raw?)
+    b2,b3     per-VFO constant pair: 2d 2f or 28 2a    (alternates with
+              dual-watch — VFO A vs B context; rssi_r / rssi_rr?)
+    b4        live level 0x39-0x46                     (noise_raw?)
+    b5,b6     per-VFO constant pair 29 2b / 28 2a      (noise_r/_rr?)
+    b7        0x07 or 0x87 — top bit sets when b1 high (flag; snr/sq?)
+    b23,b24   u16 fine level 0x0280-0x05e0, tracks b1
+    rest      constant (00 02 80 20 00 60 00 00 00 3b ... 01 40 50 00)
+  Vendor RF-status dialog fields (R.java): rssi rssi2 rssi_r rssi_rr +
+  noise noise2 noise_r noise_rr — consistent with the pairs above.
+  NEXT: repeat sampling with a real signal in (squelch open) to pin the
+  rssi<->byte mapping, then expose decoded fields in /api and the LCD.
+
+WEB UI 2026-07-16: LCD rebuilt as a radio front panel — DSEG 7-seg/14-seg
+  fonts (vendored, static/vendor/dseg, SIL-OFL), amber/green/ice backlight
+  themes (persisted), dual-VFO rows w/ CH+name+tone+power flags, segmented
+  battery, region tag, BUSY/TX, hardware key row (PWR, DW, SCAN, A/B,
+  CH up/down — all drive the real radio; verified CH step round-trip).
+  ?demo=1 = simulated radio for UI work with no hardware (labelled DEMO).
+  Full capability matrix: CAPABILITIES.md (button-for-button audit).
+
+------------------------------------------------------------------------
+12. OPEN QUESTIONS / TODO
 ------------------------------------------------------------------------
   [ ] Add a SerialTransport(COM5) to radio.py so the web UI itself connects
       on Windows (bypass AF_BLUETOOTH). Proven path from section 2.
