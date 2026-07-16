@@ -400,11 +400,16 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
     <h2>Connect</h2>
     <div class="row">
       <input type="text" id="macInput" placeholder="AA:BB:CC:DD:EE:FF" style="width:190px">
-      <select id="transportSel" title="Pick how to connect">
+      <select id="transportSel" title="Pick how to connect"
+              onchange="$('comInput').style.display=this.value==='serial'?'':'none'">
         <option value="ble">BLE</option>
-        <option value="rfcomm">RFCOMM / serial</option>
+        <option value="serial">serial (bonded COM port)</option>
+        <option value="rfcomm">RFCOMM socket</option>
         <option value="auto">auto (BLE → RFCOMM)</option>
       </select>
+      <input type="text" id="comInput" list="comPorts" placeholder="COM5"
+             style="width:90px;display:none" title="Bonded SPP serial port">
+      <datalist id="comPorts"></datalist>
       <button class="acc" onclick="connectRadio()">Connect</button>
       <button onclick="scanDevices()" id="btnScan">Scan</button>
     </div>
@@ -1703,12 +1708,25 @@ async function setRegion(i){
 async function connectRadio(){
   const mac=$("macInput").value.trim();
   if(!/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(mac)){alert("Enter a MAC address");return;}
+  const transport=$("transportSel").value;
+  const body={mac,transport};
+  if(transport==="serial"){
+    body.com_port=$("comInput").value.trim();
+    if(!body.com_port){alert("Pick the radio's bonded COM port");return;}
+  }
   logLine("connecting to "+mac+" ...");
   try{
-    const snap=await post("/api/connect",{mac,transport:$("transportSel").value});
+    const snap=await post("/api/connect",body);
     state={...state,...snap};renderAll();logLine("connected via "+snap.transport);
     loadChannels(1);
   }catch(e){logLine("connect failed: "+e.message);}
+}
+async function loadComPorts(){
+  try{
+    const l=await api("/api/comports");
+    $("comPorts").innerHTML=l.map(p=>
+      `<option value="${esc(p.port)}">${esc(p.desc)}</option>`).join("");
+  }catch(e){}
 }
 async function disconnectRadio(){
   await post("/api/disconnect");
@@ -1725,8 +1743,11 @@ async function loadConnConfig(){
     const c=await api("/api/config");
     if(c.mac&&!$("macInput").value)$("macInput").value=c.mac;
     if(c.transport)$("transportSel").value=c.transport;
+    if(c.com_port)$("comInput").value=c.com_port;
+    $("comInput").style.display=c.transport==="serial"?"":"none";
     $("autoConnChk").checked=!!c.auto_connect;
   }catch(e){/* not fatal */}
+  loadComPorts();
 }
 async function scanDevices(){
   $("btnScan").disabled=true;logLine("scanning for devices (10s) ...");

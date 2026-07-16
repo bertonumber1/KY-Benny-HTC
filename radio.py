@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import socket
 import subprocess
 import time
@@ -715,19 +716,32 @@ async def scan_devices(seconds: float = 8.0) -> list[dict]:
                                             "name": d.name, "source": "ble"}
     except Exception as e:
         log.warning("BLE scan failed: %s", e)
-    try:
-        out = subprocess.run(["bluetoothctl", "devices"], timeout=10,
-                             capture_output=True, text=True).stdout
-        for line in out.splitlines():
-            parts = line.split(" ", 2)
-            if len(parts) == 3 and parts[0] == "Device":
-                mac = parts[1].upper()
-                if mac not in found:
-                    found[mac] = {"mac": mac, "name": parts[2],
-                                  "source": "paired"}
-    except Exception as e:
-        log.warning("bluetoothctl scan failed: %s", e)
+    if os.name != "nt":
+        try:
+            out = subprocess.run(["bluetoothctl", "devices"], timeout=10,
+                                 capture_output=True, text=True).stdout
+            for line in out.splitlines():
+                parts = line.split(" ", 2)
+                if len(parts) == 3 and parts[0] == "Device":
+                    mac = parts[1].upper()
+                    if mac not in found:
+                        found[mac] = {"mac": mac, "name": parts[2],
+                                      "source": "paired"}
+        except Exception as e:
+            log.warning("bluetoothctl scan failed: %s", e)
     return sorted(found.values(), key=lambda x: x["name"] or "")
+
+
+def list_com_ports() -> list[dict]:
+    """Bonded/available serial ports (Windows: the radio's SPP link is one)."""
+    try:
+        from serial.tools import list_ports
+        return [{"port": p.device, "desc": p.description}
+                for p in sorted(list_ports.comports(),
+                                key=lambda p: p.device)]
+    except Exception as e:                                # noqa: BLE001
+        log.warning("com port listing failed: %s", e)
+        return []
 
 
 # --------------------------------------------------------------- APRS mixin

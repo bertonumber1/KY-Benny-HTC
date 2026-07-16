@@ -22,7 +22,7 @@ from pydantic import BaseModel
 import audio
 import benshi as bp
 import prop
-from radio import AprsRadio, scan_devices
+from radio import AprsRadio, list_com_ports, scan_devices
 
 import os
 import sys
@@ -308,8 +308,16 @@ async def api_get_config():
     """Connection config the UI needs to pre-fill the picker."""
     return {"mac": config.get("mac", ""),
             "transport": config.get("transport", "ble"),
+            "com_port": config.get("com_port") or "",
             "auto_connect": bool(config.get("auto_connect", False)),
             "port": config.get("port", 8099)}
+
+
+@app.get("/api/comports")
+async def api_comports():
+    """Serial ports on the bridge machine (the radio's bonded SPP link is
+    one of these on Windows) — for the Connect card's COM picker."""
+    return list_com_ports()
 
 
 @app.post("/api/auto_connect/{on}")
