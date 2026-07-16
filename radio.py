@@ -469,6 +469,44 @@ class Radio:
         await self._command(Cmd.SET_HT_ON_OFF, bytes([1 if on else 0]),
                             expect_reply=False)
 
+    # ------------------------------------------------------ voice / PTT
+    # EXPERIMENTAL — keying mechanism is being confirmed on live hardware.
+    # The vendor app transmits by relaying HFP audio to air; two candidate
+    # gates exist and we expose both so we can see which the radio honours:
+    #   (a) DO_PROG_FUNC(66) with the MAIN_PTT effect (13) — press/release,
+    #       mirrors tapping a PTT-assigned programmable button;
+    #   (b) SET_PHONE_STATUS(51) — HFP call state; "call active" is what makes
+    #       aghfp_call_mode relay the SCO audio to the air.
+    # See FINDINGS §voice and vrn7600-voice-plan.
+
+    PTT_EFFECT_MAIN = 13          # PF_EFFECT_NAMES: MAIN_PTT
+    PTT_EFFECT_MONITOR = 15       # TOGGLE_MONITOR
+
+    async def ptt(self, on: bool) -> bytes:
+        """Key/unkey transmit via DO_PROG_FUNC(MAIN_PTT). Returns raw reply
+        so callers/UI can see the status byte while we validate this live."""
+        # payload hypothesis: [effect_code, pressed?]  (1 = down, 0 = up)
+        return await self.raw_command(
+            int(Cmd.DO_PROG_FUNC), bytes([self.PTT_EFFECT_MAIN, 1 if on else 0]))
+
+    async def set_phone_status(self, state: int) -> bytes:
+        """SET_PHONE_STATUS(51) — HFP call state. Candidate values under test:
+        0 = idle/hang-up, 1 = incoming, 2 = dialing, 3 = active/off-hook.
+        Driving to 'active' is the other way to open the relayed-audio path."""
+        return await self.raw_command(int(Cmd.SET_PHONE_STATUS),
+                                      bytes([state & 0xFF]))
+
+    async def ensure_audio_relay(self, on: bool = True) -> None:
+        """Turn on the settings the vendor app uses so HFP audio is relayed to
+        the air: aghfp_call_mode, audio_relay_en, keep_aghfp_link."""
+        want = 1 if on else 0
+        try:
+            await self.write_settings({"aghfp_call_mode": want,
+                                       "audio_relay_en": want,
+                                       "keep_aghfp_link": want})
+        except (CommandFailed, ProtocolError) as e:
+            log.warning("ensure_audio_relay: %s", e)
+
     async def get_position(self) -> Position:
         r = await self._command(Cmd.GET_POSITION)
         self.position = Position.parse(r, 1)

@@ -4,5 +4,7 @@
   "rfcomm_channel": null,
   "port": 8099,
   "auto_connect": false,
-  "status_poll_seconds": 30
+  "status_poll_seconds": 30,
+  "rf_poll_seconds": 2,
+  "access_token": ""
 }

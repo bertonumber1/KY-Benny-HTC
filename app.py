@@ -15,10 +15,11 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import audio
 import benshi as bp
 from radio import AprsRadio, scan_devices
 
@@ -45,6 +46,8 @@ DEFAULT_CONFIG = {
     "auto_connect": False,     # off by default; opt-in via the Connect card
     "status_poll_seconds": 15,  # doubles as keep-alive; keep < radio idle timeout
     "rf_poll_seconds": 2,      # fast HT-status poll for the live S-meter
+    "access_token": "",        # set non-empty to require a token on /api + /ws
+                               # (do this before port-forwarding for remote use)
 }
 
 
@@ -80,6 +83,29 @@ async def broadcast(kind: str, data):
 
 
 radio.event_cb = broadcast
+
+# ---- voice bridge (HFP SCO <-> browser) --------------------------------
+bridge = audio.AudioBridge()
+audio_clients: set[WebSocket] = set()
+
+
+async def _broadcast_rx(pcm: bytes) -> None:
+    """Push one RX PCM frame (int16 mono 8 kHz) to every audio-WS client."""
+    dead = []
+    for ws in audio_clients:
+        try:
+            await ws.send_bytes(pcm)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        audio_clients.discard(ws)
+
+bridge.rx_cb = _broadcast_rx
+
+
+def token_ok(supplied: str | None) -> bool:
+    want = config.get("access_token") or ""
+    return not want or supplied == want
 
 
 async def connect_radio() -> None:
@@ -144,10 +170,25 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(keeper())
     yield
     task.cancel()
+    bridge.close()
     await radio.disconnect()
 
 
 app = FastAPI(title="VR-N7600 Remote", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def auth_gate(request, call_next):
+    """Single-token gate for remote exposure. When access_token is set, every
+    /api/* call must present it (X-Auth-Token header or ?token=). The page and
+    static assets stay open so the browser can load and prompt for the token;
+    all state-changing surface is behind /api and the websockets."""
+    if config.get("access_token") and request.url.path.startswith("/api/"):
+        supplied = (request.headers.get("X-Auth-Token")
+                    or request.query_params.get("token"))
+        if not token_ok(supplied):
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
@@ -545,8 +586,108 @@ async def api_aprs_log():
     return radio.aprs_log[-300:]
 
 
+@app.get("/api/auth/check")
+async def api_auth_check():
+    """200 if the presented token is accepted (or no token is required).
+    The middleware already rejected bad tokens, so reaching here means OK."""
+    return {"ok": True, "auth_required": bool(config.get("access_token"))}
+
+
+# ---------------------------------------------------------- voice / audio
+@app.get("/api/audio/devices")
+async def api_audio_devices():
+    """Every host audio endpoint, with the radio's Hands-Free ones flagged."""
+    return {"devices": audio.list_devices(), "status": bridge.status()}
+
+
+@app.get("/api/audio/status")
+async def api_audio_status():
+    st = bridge.status()
+    st["hfp_connected"] = bool(radio.ht_status and
+                               getattr(radio.ht_status, "is_hfp_connected", False))
+    return st
+
+
+@app.post("/api/audio/relay/{on}")
+async def api_audio_relay(on: int):
+    require_connected()
+    await radio.ensure_audio_relay(bool(on))
+    return {"ok": True}
+
+
+@app.post("/api/ptt/{on}")
+async def api_ptt(on: int):
+    """Key (1) / unkey (0) transmit. On key: open the TX audio stream to the
+    radio, then assert PTT; on unkey: drop PTT, then close the stream."""
+    require_connected()
+    keyed = bool(on)
+    reply = None
+    try:
+        if keyed:
+            try:
+                bridge.start_tx()
+            except Exception as e:               # noqa: BLE001
+                log.warning("start_tx: %s", e)
+            reply = await radio.ptt(True)
+        else:
+            reply = await radio.ptt(False)
+            bridge.stop_tx()
+    except Exception as e:                        # noqa: BLE001
+        raise HTTPException(502, f"ptt: {e}")
+    await broadcast("ptt", {"tx": keyed})
+    return {"tx": keyed, "reply_hex": reply.hex(" ") if reply else None}
+
+
+class PhoneStatusBody(BaseModel):
+    state: int
+
+
+@app.post("/api/phone_status")
+async def api_phone_status(body: PhoneStatusBody):
+    """Experimental HFP call-state control (SET_PHONE_STATUS 51)."""
+    require_connected()
+    try:
+        reply = await radio.set_phone_status(body.state)
+    except Exception as e:                        # noqa: BLE001
+        raise HTTPException(502, f"phone_status: {e}")
+    return {"state": body.state, "reply_hex": reply.hex(" ") if reply else None}
+
+
+@app.websocket("/ws/audio")
+async def ws_audio(ws: WebSocket):
+    """Binary PCM both ways: server->client = RX (radio off-air audio),
+    client->server = TX (operator mic, only sent while PTT is keyed). Frames
+    are int16 mono little-endian at audio.RADIO_RATE (8 kHz)."""
+    if not token_ok(ws.query_params.get("token")):
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    audio_clients.add(ws)
+    try:
+        if not bridge.rx_active:
+            try:
+                bridge.start_rx(asyncio.get_running_loop())
+            except Exception as e:                # noqa: BLE001
+                await ws.send_text(json.dumps({"error": str(e)}))
+        while True:
+            msg = await ws.receive()
+            if msg.get("bytes") is not None:
+                bridge.feed_tx(msg["bytes"])      # operator mic -> radio
+            elif msg.get("text") == "ping":
+                continue
+    except WebSocketDisconnect:
+        pass
+    finally:
+        audio_clients.discard(ws)
+        if not audio_clients:                     # last listener left
+            bridge.stop_rx()
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    if not token_ok(ws.query_params.get("token")):
+        await ws.close(code=1008)
+        return
     await ws.accept()
     ws_clients.add(ws)
     try:

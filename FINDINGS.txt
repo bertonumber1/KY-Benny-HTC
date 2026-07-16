@@ -475,3 +475,64 @@ WEB UI 2026-07-16: LCD rebuilt as a radio front panel — DSEG 7-seg/14-seg
   [ ] Resolve BLE bonded-GATT auth on Windows (alternative to COM5) if we
       want a serial-port-free path.
 ========================================================================
+
+------------------------------------------------------------------------
+12. VOICE / AUDIO BRIDGE  (built 2026-07-16 — HFP path, live-test pending)
+------------------------------------------------------------------------
+Confirmed on THIS Windows box: once the radio is bonded, Windows enumerates
+its Hands-Free service (0000111F) as a pair of mono 8 kHz WDM-KS endpoints:
+    "...Hands-Free HF Audio...(VR-N7600)"   input(#7)  = RX (radio off-air)
+                                            output(#6) = TX (to air on key)
+Windows is acting as the HFP Audio Gateway; the radio is the HF unit
+(matches vendor settings aghfp_call_mode / audio_relay_en / keep_aghfp_link).
+8 kHz mono = narrowband CVSD SCO. sounddevice finds both without extra libs.
+
+Implemented (all wired + smoke-tested; audio needs the radio awake to prove):
+  - audio.py  AudioBridge: find_radio_devices() name-matches the HF endpoints;
+    start_rx() streams capture -> async cb; start_tx()/feed_tx() play queue.
+  - app.py    /ws/audio  binary PCM both ways (int16 mono 8k); RX broadcast to
+    all listeners (opens on first, closes on last); TX fed from operator mic.
+    /api/audio/devices, /api/audio/status, /api/ptt/{on}, /api/audio/relay/{on},
+    /api/phone_status.
+  - static    Voice tab: press&hold PTT (pointer + Space), Listen(RX)+vol,
+    browser AudioContext forced to 8 kHz so nobody resamples.
+
+OPEN (needs radio awake + operator, per one-connection gotcha):
+  [ ] Which gate actually keys TX? radio.ptt() tries DO_PROG_FUNC(66) payload
+      [MAIN_PTT=13, down/up]; set_phone_status(51) [state 0..3] is the other
+      candidate (HFP "call active" is what relays SCO to air). Probe both.
+  [ ] Does opening WDM-KS #6 auto-establish SCO, or must a "call" be active
+      first? If silent, drive phone_status=active (or enable audio relay) then
+      retry the TX stream.
+  [ ] Confirm RX = off-air audio (not just sidetone) and end-to-end latency.
+
+------------------------------------------------------------------------
+13. REMOTE ACCESS  (control from outside the LAN — built 2026-07-16)
+------------------------------------------------------------------------
+Everything (UI + control + audio) rides ONE HTTP/WS port (8099) already, so
+remote = port-forward that one port. Added a single shared-secret gate so it
+is safe to expose: set config.json "access_token" non-empty; then every
+/api/* call needs it (X-Auth-Token header or ?token=) and /ws + /ws/audio
+need ?token=. Empty token = open (local dev, unchanged). The page/static stay
+open so the browser can load and prompt; the UI stores the token in
+localStorage and attaches it everywhere. Verified: no/bad token -> 401,
+header/qs token -> 200, page always served. Put TLS in front (reverse proxy
+or Cloudflare Tunnel) before real internet exposure — the token rides the
+request, so it must be over wss/https.
+
+------------------------------------------------------------------------
+14. FIRMWARE / FOTA — does the vendor app need root?  (answered 2026-07-16)
+------------------------------------------------------------------------
+No. Nothing in the decompiled app shells out or escalates: no Runtime.exec of
+su, no /system/bin, no magisk/superuser anywhere under sources/. Android apps
+can't get root normally and this one doesn't try. "FOTA" is split in two:
+  - CLOUD CHECK: DeviceManagement gRPC service, method CheckFirmwareUpdate,
+    returns FirmwareInfo{url, md5, version} (see rpc/Dm.java, DeviceManagement
+    Grpc.java). The phone just downloads the blob from that URL.
+  - RADIO FLASH: NOT in the radio's own BT command set (cmds 1..77 have no
+    firmware/flash/OTA op). So the push happens out-of-band of the control
+    protocol we speak — the radio is rebooted into a bootloader/DFU mode and
+    the image is written over a separate BLE/SCO channel (standard for these
+    SoCs). No phone privilege is involved; it's ordinary BLE writes to the
+    device's upgrade endpoint. We have NOT reverse-engineered that path (and
+    it's the one place a bad write can brick the radio, so leave it last).

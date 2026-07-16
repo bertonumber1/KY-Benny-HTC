@@ -102,6 +102,18 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   border:1px solid var(--line);color:var(--dim);text-transform:uppercase}
 .check{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0}
 .check input{accent-color:var(--acc)}
+.muted{color:var(--dim)}
+.kv{font-size:13px;color:var(--text);line-height:1.7}
+.kv b{color:var(--acc)}
+button.ptt{width:150px;height:150px;border-radius:50%;font-size:28px;
+  font-weight:800;letter-spacing:2px;color:#fff;background:var(--panel2);
+  border:3px solid var(--line);user-select:none;touch-action:none;
+  transition:transform .05s,background .1s,box-shadow .1s}
+button.ptt:not(:disabled){border-color:var(--acc);color:var(--acc)}
+button.ptt.tx{background:var(--tx);color:#fff;border-color:var(--tx);
+  box-shadow:0 0 26px color-mix(in srgb,var(--tx) 70%,transparent);transform:scale(.97)}
+button.ptt:disabled{opacity:.4}
+.pill.txon{background:var(--tx);color:#fff;border-color:var(--tx)}
 fieldset{border:1px solid var(--line);border-radius:8px;margin:0 0 12px;padding:8px 12px}
 legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.8px;padding:0 6px}
 /* ================= virtual radio front panel ================= */
@@ -237,6 +249,7 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
   <button data-tab="dash" class="on">Dashboard</button>
   <button data-tab="channels">Channels</button>
   <button data-tab="aprs">APRS</button>
+  <button data-tab="voice">Voice</button>
   <button data-tab="settings">Settings</button>
   <button data-tab="log">Log</button>
 </nav>
@@ -482,6 +495,38 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
   </div>
 </div>
 
+<!-- ======================= VOICE ======================= -->
+<div class="tab" id="tab-voice">
+  <div class="card">
+    <h2>Voice / audio bridge</h2>
+    <p class="muted" style="margin-top:0">Radio audio rides the Bluetooth
+      Hands-Free link on the bridge machine, streamed to this browser over a
+      WebSocket. Press &amp; hold PTT to transmit your mic to the air.</p>
+    <div id="audioStatus" class="kv">checking audio bridge…</div>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px">
+      <button id="pttBtn" class="ptt" disabled>PTT</button>
+      <label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="rxOn"> Listen (RX)</label>
+      <label style="display:flex;align-items:center;gap:6px">RX vol
+        <input type="range" id="rxVol" min="0" max="100" value="80" style="width:110px"></label>
+      <span id="txState" class="pill">idle</span>
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:10px">
+      PTT holds while the button (or the <b>Space</b> bar, on this tab) is down.
+      First use asks for microphone permission.</p>
+  </div>
+  <div class="card">
+    <h2>Keying &amp; relay <span class="muted" style="font-size:12px">(experimental — validating on hardware)</span></h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="acc" onclick="setRelay(1)">Enable audio relay</button>
+      <button class="acc" onclick="setRelay(0)">Disable relay</button>
+      <button class="acc" onclick="phoneStatus(3)">Phone: active</button>
+      <button class="acc" onclick="phoneStatus(0)">Phone: idle</button>
+    </div>
+    <div id="voiceProbe" class="kv" style="margin-top:10px"></div>
+  </div>
+</div>
+
 <!-- ======================= SETTINGS ======================= -->
 <div class="tab" id="tab-settings">
   <div class="card">
@@ -684,6 +729,7 @@ $("tabs").addEventListener("click",e=>{
   if(t==="aprs"&&state.connected&&!state.bss)loadBss(0);
   if(t==="aprs")setTimeout(()=>{initAprsMap();updateAprsMap();},0);
   if(t==="settings")renderSettingsTab();
+  if(t==="voice")refreshAudio();
 });
 
 /* ---------------- helpers ---------------- */
@@ -698,12 +744,23 @@ function logLine(msg){
 function mhz(hz){return hz?(hz/1e6).toFixed(4).replace(/0{0,2}$/,""):"–";}
 function toneTxt(v){if(!v)return"";return v<6700?("D"+v):((v/100).toFixed(1));}
 function esc(s){return String(s??"").replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));}
+function authToken(){try{return localStorage.getItem("vrn_token")||"";}catch(e){return"";}}
 async function api(path,opts){
+  opts=opts||{};
+  const tok=authToken();
+  if(tok){opts.headers={...(opts.headers||{}),"X-Auth-Token":tok};}
   const r=await fetch(path,opts);
+  if(r.status===401){promptToken();throw new Error("unauthorized — enter access token");}
   if(!r.ok){let t;try{t=(await r.json()).detail}catch(e){t=await r.text()}
     throw new Error(t||r.status);}
   return r.json();
 }
+function promptToken(){
+  const t=prompt("Access token required to reach this radio remotely:",authToken());
+  if(t!==null){try{localStorage.setItem("vrn_token",t);}catch(e){}
+    location.reload();}
+}
+function wsQuery(){const t=authToken();return t?("?token="+encodeURIComponent(t)):"";}
 async function post(path,body){
   return api(path,{method:"POST",headers:{"Content-Type":"application/json"},
     body:body===undefined?undefined:JSON.stringify(body)});
@@ -711,7 +768,7 @@ async function post(path,body){
 
 /* ---------------- websocket ---------------- */
 function openWs(){
-  ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
+  ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws"+wsQuery());
   ws.onmessage=e=>{const m=JSON.parse(e.data);handleMsg(m.kind,m.data);};
   ws.onclose=()=>{setTimeout(openWs,3000);};
   clearInterval(wsTimer);
@@ -746,6 +803,7 @@ function handleMsg(kind,d){
     logLine(`APRS ${d.dir}: ${esc(d.source)} ${d.type}`);}
   else if(kind==="data_rxd"){logLine("data rx: "+d.hex);}
   else if(kind==="position"){logLine(`position: ${d.latitude.toFixed(5)}, ${d.longitude.toFixed(5)}`);}
+  else if(kind==="ptt"){setTxUi(d.tx);}
   else if(kind==="event"){logLine("event "+d.type+(d.hex?" "+d.hex:""));}
 }
 
@@ -1587,6 +1645,125 @@ function startDemo(){
 /* ---------------- startup ---------------- */
 buildSMeters();
 try{setLcdTheme(localStorage.getItem("lcdTheme")||"amber");}catch(e){}
+/* ---------------- voice / audio bridge ---------------- */
+let audioWs=null, rxCtx=null, rxGain=null, rxNext=0, rxEnabled=false;
+let txCtx=null, txStream=null, txSrc=null, txProc=null, keyed=false, micReady=null;
+const RADIO_RATE=8000;
+
+async function refreshAudio(){
+  try{
+    const s=await api("/api/audio/status");
+    const el=$("audioStatus");
+    const link=s.link_up?"<b>up</b>":"<span class='muted'>not found</span>";
+    el.innerHTML=
+      `Bridge audio: ${s.have_audio?"available":"<span class='muted'>libs missing</span>"} · `+
+      `Hands-Free link: ${link} · HFP flag: ${s.hfp_connected?"<b>yes</b>":"no"}<br>`+
+      `RX dev ${s.rx_device??"–"} · TX dev ${s.tx_device??"–"} · ${s.rate} Hz mono`;
+    $("pttBtn").disabled=!(s.link_up&&state.connected);
+  }catch(e){$("audioStatus").innerHTML="audio status error: "+esc(e.message);}
+}
+
+function openAudioWs(){
+  if(audioWs&&audioWs.readyState<=1)return audioWs;
+  audioWs=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+
+    location.host+"/ws/audio"+wsQuery());
+  audioWs.binaryType="arraybuffer";
+  audioWs.onmessage=e=>{
+    if(typeof e.data==="string"){try{const j=JSON.parse(e.data);
+      if(j.error)logLine("audio bridge: "+j.error);}catch(_){}return;}
+    playRx(e.data);
+  };
+  audioWs.onclose=()=>{audioWs=null;if(rxEnabled||keyed)setTimeout(openAudioWs,1500);};
+  return audioWs;
+}
+function closeAudioWsIfIdle(){if(!rxEnabled&&!keyed&&audioWs){audioWs.close();audioWs=null;}}
+
+function playRx(buf){
+  if(!rxEnabled)return;
+  if(!rxCtx){rxCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:RADIO_RATE});
+    rxGain=rxCtx.createGain();rxGain.connect(rxCtx.destination);setRxVol();}
+  const i16=new Int16Array(buf), f32=new Float32Array(i16.length);
+  for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
+  const ab=rxCtx.createBuffer(1,f32.length,RADIO_RATE);
+  ab.getChannelData(0).set(f32);
+  const src=rxCtx.createBufferSource();src.buffer=ab;src.connect(rxGain);
+  const now=rxCtx.currentTime;
+  if(rxNext<now)rxNext=now+0.06;          // small jitter buffer
+  src.start(rxNext);rxNext+=ab.duration;
+}
+function setRxVol(){if(rxGain)rxGain.gain.value=$("rxVol").value/100;}
+
+function setListen(on){
+  rxEnabled=on;$("rxOn").checked=on;
+  if(on){openAudioWs();if(rxCtx&&rxCtx.state==="suspended")rxCtx.resume();}
+  else{rxNext=0;closeAudioWsIfIdle();}
+}
+
+async function ensureMic(){
+  if(micReady)return micReady;
+  micReady=navigator.mediaDevices.getUserMedia({audio:{channelCount:1,
+    echoCancellation:false,noiseSuppression:false,autoGainControl:true}});
+  txStream=await micReady;return micReady;
+}
+
+async function startTx(){
+  if(keyed||$("pttBtn").disabled)return;
+  keyed=true;setTxUi(true);
+  try{
+    await ensureMic();
+    openAudioWs();
+    txCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:RADIO_RATE});
+    if(txCtx.state==="suspended")await txCtx.resume();
+    txSrc=txCtx.createMediaStreamSource(txStream);
+    txProc=txCtx.createScriptProcessor(512,1,1);
+    txProc.onaudioprocess=e=>{
+      if(!keyed||!audioWs||audioWs.readyState!==1)return;
+      const f=e.inputBuffer.getChannelData(0);
+      const out=new Int16Array(f.length);
+      for(let i=0;i<f.length;i++){let s=Math.max(-1,Math.min(1,f[i]));
+        out[i]=s<0?s*32768:s*32767;}
+      audioWs.send(out.buffer);
+    };
+    txSrc.connect(txProc);txProc.connect(txCtx.destination);
+    await post("/api/ptt/1");
+  }catch(e){logLine("PTT error: "+esc(e.message));stopTx();}
+}
+async function stopTx(){
+  if(!keyed)return;
+  keyed=false;setTxUi(false);
+  try{await post("/api/ptt/0");}catch(e){logLine("unkey error: "+esc(e.message));}
+  if(txProc){txProc.disconnect();txProc.onaudioprocess=null;txProc=null;}
+  if(txSrc){txSrc.disconnect();txSrc=null;}
+  if(txCtx){txCtx.close();txCtx=null;}
+  closeAudioWsIfIdle();
+}
+function setTxUi(on){
+  $("pttBtn").classList.toggle("tx",on);
+  const p=$("txState");p.textContent=on?"TRANSMIT":"idle";p.classList.toggle("txon",on);
+}
+
+async function setRelay(on){try{await post("/api/audio/relay/"+on);
+  $("voiceProbe").innerHTML="audio relay "+(on?"enabled":"disabled");}
+  catch(e){$("voiceProbe").innerHTML="relay: "+esc(e.message);}}
+async function phoneStatus(st){try{const r=await post("/api/phone_status",{state:st});
+  $("voiceProbe").innerHTML="phone_status "+st+" → reply "+(r.reply_hex||"—");}
+  catch(e){$("voiceProbe").innerHTML="phone_status: "+esc(e.message);}}
+
+function initVoice(){
+  const b=$("pttBtn");
+  b.addEventListener("pointerdown",e=>{e.preventDefault();b.setPointerCapture(e.pointerId);startTx();});
+  b.addEventListener("pointerup",e=>{e.preventDefault();stopTx();});
+  b.addEventListener("pointercancel",stopTx);
+  b.addEventListener("lostpointercapture",stopTx);
+  $("rxOn").addEventListener("change",e=>setListen(e.target.checked));
+  $("rxVol").addEventListener("input",setRxVol);
+  // hold Space to talk, only while the Voice tab is visible
+  addEventListener("keydown",e=>{if(e.code==="Space"&&$("tab-voice").classList.contains("on")
+    &&!e.repeat&&document.activeElement.tagName!=="INPUT"){e.preventDefault();startTx();}});
+  addEventListener("keyup",e=>{if(e.code==="Space"&&keyed){e.preventDefault();stopTx();}});
+}
+initVoice();
+
 if(DEMO){startDemo();}
 else{openWs();loadConnConfig();}
 </script>
