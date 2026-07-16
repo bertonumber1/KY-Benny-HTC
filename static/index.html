@@ -7,8 +7,8 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <style>
-:root{
-  --bg:#0b1017; --panel:#121a26; --panel2:#182333; --line:#233247;
+:root{  /* AMOLED: true-black background, near-black panels */
+  --bg:#000; --panel:#0a0d11; --panel2:#12171e; --line:#1d2530;
   --text:#dbe6f4; --dim:#7d90a8; --acc:#2dd4bf; --warn:#fbbf24;
   --bad:#f87171; --good:#4ade80; --tx:#f87171; --rx:#4ade80;
 }
@@ -114,9 +114,9 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 @font-face{font-family:"DSEG14";
   src:url(/static/vendor/dseg/DSEG14Classic-Italic.woff2) format("woff2");
   font-display:swap}
-.radioface{background:linear-gradient(175deg,#2a3038,#161a20 55%,#0e1116);
-  border:1px solid #343c46;border-radius:16px;padding:12px 14px 10px;
-  box-shadow:0 6px 24px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.07);
+.radioface{background:linear-gradient(175deg,#171b21,#0b0d11 55%,#020304);
+  border:1px solid #262d36;border-radius:16px;padding:12px 14px 10px;
+  box-shadow:0 6px 24px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.06);
   margin-bottom:14px}
 .rf-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .rf-brand{font-size:12px;font-weight:800;letter-spacing:2.5px;color:#aeb9c6}
@@ -128,23 +128,25 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 @keyframes blink{50%{opacity:.35}}
 .rf-theme{margin-left:auto;display:flex;gap:4px}
 .rf-theme button{width:18px;height:18px;padding:0;border-radius:50%;border:1px solid #444}
-.rf-theme .th-am{background:#ffb02e}.rf-theme .th-gr{background:#7ce480}.rf-theme .th-ic{background:#9fd4ff}
-/* LCD glass — themeable via vars */
-.lcd{--fg:#ffc46b;--hi:#ffe0ae;--dim:rgba(255,196,107,.42);--ghost:rgba(255,196,107,.09);
-  --glass:radial-gradient(120% 140% at 50% 0%,#20180a 0%,#150f05 55%,#0e0a04 100%);
+.rf-theme button.on{border-color:#fff;box-shadow:0 0 5px rgba(255,255,255,.4)}
+.rf-theme .th-am{background:#ffb02e}.rf-theme .th-gr{background:#7ce480}
+.rf-theme .th-bl{background:#8ec8ff}.rf-theme .th-wh{background:#e6edf5}
+/* LCD glass — AMOLED true-black behind the digits; themes only tint
+   the segments, never the background */
+.lcd{--fg:#ffc46b;--hi:#ffe0ae;--dim:rgba(255,196,107,.42);--ghost:rgba(255,196,107,.08);
   --grid:rgba(255,196,107,.14);
-  background:var(--glass);border:1px solid #000;border-radius:8px;
-  box-shadow:inset 0 2px 14px rgba(0,0,0,.85),inset 0 0 60px rgba(255,180,80,.05);
+  background:#000;border:1px solid #000;border-radius:8px;
+  box-shadow:inset 0 2px 14px rgba(0,0,0,.9);
   padding:10px 14px;font-family:ui-monospace,Menlo,Consolas,monospace;
   color:var(--fg);position:relative;overflow:hidden}
-.lcd.green{--fg:#8ff08f;--hi:#d2ffd2;--dim:rgba(143,240,143,.42);--ghost:rgba(143,240,143,.09);
-  --glass:radial-gradient(120% 140% at 50% 0%,#0d1a0c 0%,#081207 55%,#050c05 100%);
-  --grid:rgba(143,240,143,.14);box-shadow:inset 0 2px 14px rgba(0,0,0,.85),inset 0 0 60px rgba(110,230,110,.05)}
-.lcd.ice{--fg:#a8d8ff;--hi:#e2f3ff;--dim:rgba(168,216,255,.42);--ghost:rgba(168,216,255,.09);
-  --glass:radial-gradient(120% 140% at 50% 0%,#0b141d 0%,#070e15 55%,#04080d 100%);
-  --grid:rgba(168,216,255,.14);box-shadow:inset 0 2px 14px rgba(0,0,0,.85),inset 0 0 60px rgba(140,200,255,.05)}
+.lcd.green{--fg:#8ff08f;--hi:#d2ffd2;--dim:rgba(143,240,143,.42);
+  --ghost:rgba(143,240,143,.08);--grid:rgba(143,240,143,.14)}
+.lcd.blue{--fg:#8ec8ff;--hi:#dff0ff;--dim:rgba(142,200,255,.42);
+  --ghost:rgba(142,200,255,.08);--grid:rgba(142,200,255,.14)}
+.lcd.white{--fg:#e6edf5;--hi:#fff;--dim:rgba(230,237,245,.42);
+  --ghost:rgba(230,237,245,.07);--grid:rgba(230,237,245,.14)}
 .lcd::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:8px;
-  background:linear-gradient(160deg,rgba(255,255,255,.055) 0%,transparent 32%)}
+  background:linear-gradient(160deg,rgba(255,255,255,.04) 0%,transparent 32%)}
 .lcd .hid{visibility:hidden}
 .lcd-icons{display:flex;gap:12px;align-items:center;font-size:11px;font-weight:600;
   letter-spacing:1px;border-bottom:1px solid var(--grid);padding-bottom:6px;margin-bottom:6px}
@@ -246,10 +248,11 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
     <div class="rf-top">
       <span id="rfLed" class="rf-led"></span>
       <span class="rf-brand">VR-N7600 <small>REMOTE HEAD</small></span>
-      <div class="rf-theme" title="LCD backlight">
+      <div class="rf-theme" title="LCD colour">
         <button class="th-am" onclick="setLcdTheme('amber')" title="amber"></button>
         <button class="th-gr" onclick="setLcdTheme('green')" title="green"></button>
-        <button class="th-ic" onclick="setLcdTheme('ice')" title="ice"></button>
+        <button class="th-bl" onclick="setLcdTheme('blue')" title="blue"></button>
+        <button class="th-wh" onclick="setLcdTheme('white')" title="white"></button>
       </div>
     </div>
     <div class="lcd" id="lcd">
@@ -532,6 +535,11 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
         <div>
           <fieldset><legend>Power / display</legend>
             <div class="grid2">
+              <label title="web UI preference (saved in this browser, not on the radio)">LCD colour</label>
+              <select id="sLcdTheme" onchange="setLcdTheme(this.value)">
+                <option value="amber">Amber</option><option value="green">Green</option>
+                <option value="blue">Blue</option><option value="white">White</option>
+              </select>
               <label>Auto power off</label><input type="number" id="sApo" min="0" max="7">
               <label>Screen timeout</label><input type="number" id="sScreen" min="0" max="31">
             </div>
@@ -749,9 +757,16 @@ function renderAll(){renderHeader();renderStatus();renderSettings();
 /* ---------------- virtual radio face ---------------- */
 function chOf(i){return state.channels.find(c=>c.channel_id===i);}
 
-/* LCD backlight theme */
+/* LCD colour (browser preference, not a radio setting) */
+const LCD_THEMES=["amber","green","blue","white"];
 function setLcdTheme(t){
+  if(t==="ice")t="blue";                       // legacy stored value
+  if(!LCD_THEMES.includes(t))t="amber";
   $("lcd").className="lcd"+(t==="amber"?"":" "+t);
+  const sw={amber:"th-am",green:"th-gr",blue:"th-bl",white:"th-wh"};
+  for(const b of document.querySelectorAll(".rf-theme button"))
+    b.classList.toggle("on",b.classList.contains(sw[t]));
+  const sel=$("sLcdTheme");if(sel)sel.value=t;
   try{localStorage.setItem("lcdTheme",t);}catch(e){}
 }
 
