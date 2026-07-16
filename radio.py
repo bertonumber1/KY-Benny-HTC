@@ -262,6 +262,7 @@ class Radio:
         self.fm: bp.FmStatus | None = None
         self.region_names: list[str] = []
         self.rf_status_raw: bytes | None = None
+        self.event_log: list[tuple[float, str, str]] = []
         self.connected = False
         self.event_cb = None          # async callable(kind, data-dict)
         self._pending: dict[int, asyncio.Future] = {}
@@ -398,6 +399,10 @@ class Radio:
 
     def _handle_event(self, payload: bytes):
         ev = Event(payload[0]) if payload[0] < len(Event) else Event.UNKNOWN
+        # rolling raw-event log for protocol RE (see /api/debug/events)
+        self.event_log.append((time.time(), ev.name, payload.hex(" ")))
+        if len(self.event_log) > 200:
+            del self.event_log[:100]
         try:
             if ev == Event.HT_STATUS_CHANGED:
                 self.ht_status = HTStatus.parse(payload, 1)
@@ -574,6 +579,16 @@ class Radio:
         # payload hypothesis: [effect_code, pressed?]  (1 = down, 0 = up)
         return await self.raw_command(
             int(Cmd.DO_PROG_FUNC), bytes([self.PTT_EFFECT_MAIN, 1 if on else 0]))
+
+    async def do_prog_func(self, effect: int, state: int = 1) -> bytes:
+        """DO_PROG_FUNC(66) — press a programmable-button effect remotely.
+        Payload [effect, state]; state 1 = press, 0 = release. Radio ACKs
+        status 00. MAIN_PTT(13) is accepted but never keys (PTT is audio-
+        implicit over AOC, FINDINGS §12); toggles like TOGGLE_MONITOR(15),
+        TOGGLE_MUTE(23), VOL_UP/DOWN(22/21), T_CALL(9) act like the real
+        button."""
+        return await self._command(Cmd.DO_PROG_FUNC,
+                                   bytes([effect & 0xFF, state & 0xFF]))
 
     async def set_phone_status(self, state: int) -> bytes:
         """SET_PHONE_STATUS(51) — HFP call state. Candidate values under test:

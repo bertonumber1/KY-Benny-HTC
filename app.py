@@ -385,6 +385,39 @@ async def api_fm_freq(khz: int):
     return {"ok": True}
 
 
+@app.get("/api/debug/htstatus")
+async def api_debug_htstatus():
+    """Raw GET_HT_STATUS payload + parse, for status-bit RE work."""
+    require_connected()
+    raw = await radio._command(bp.Cmd.GET_HT_STATUS)
+    st = bp.HTStatus.parse(raw, 1)
+    rf = await radio.read_rf_status_raw()
+    return {"raw": raw.hex(" "), "parsed": bp.struct_dict(st),
+            "rf_raw": rf.hex(" ") if rf else None}
+
+
+@app.post("/api/progfunc/{effect}")
+async def api_progfunc(effect: int, state: int = -1):
+    """Remote button press (DO_PROG_FUNC). state -1 = full press+release
+    cycle, else a single 1/0 edge."""
+    require_connected()
+    try:
+        if state < 0:
+            await radio.do_prog_func(effect, 1)
+            reply = await radio.do_prog_func(effect, 0)
+        else:
+            reply = await radio.do_prog_func(effect, state)
+    except Exception as e:                        # noqa: BLE001
+        raise HTTPException(502, f"progfunc: {e}")
+    return {"effect": effect, "reply_hex": reply.hex(" ") if reply else None}
+
+
+@app.get("/api/debug/events")
+async def api_debug_events(n: int = 40):
+    """Raw event payloads captured off the wire (newest last)."""
+    return [{"t": t, "ev": ev, "hex": hx} for t, ev, hx in radio.event_log[-n:]]
+
+
 @app.get("/api/regions")
 async def api_regions(refresh: int = 0):
     require_connected()
@@ -696,6 +729,8 @@ async def ws_audio(ws: WebSocket):
                 await ws.send_text(json.dumps({"error": str(e)}))
         while True:
             msg = await ws.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
             if msg.get("bytes") is not None:
                 bridge.feed_tx(msg["bytes"])      # operator mic -> radio
             elif msg.get("text") == "ping":

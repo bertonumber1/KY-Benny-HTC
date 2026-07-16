@@ -225,10 +225,21 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 .rf-keys button.lit{color:#7ce480;text-shadow:0 0 6px rgba(124,228,128,.6)}
 .rf-keys button.danger2{color:#ff8d84}
 .rf-keys .gap{flex:1}
+/* control deck under the key row — PTT / volume / squelch / channel selects */
+.rf-deck{display:grid;grid-template-columns:1fr auto;gap:6px 22px;align-items:center;
+  border-top:1px solid #262d36;margin-top:10px;padding-top:10px}
+.rf-ctl{display:flex;align-items:center;gap:8px;margin:4px 0}
+.rf-lbl{width:44px;flex:none;font-size:10px;font-weight:800;letter-spacing:1px;color:#7d8ea3}
+.rf-ctl select{flex:1;min-width:0}
+.rf-ctl input[type=range]{flex:1;min-width:0}
+.rf-deck-r{display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 6px}
+.rf-deck-r .ptt{width:118px;height:118px;font-size:24px}
 @media(max-width:640px){
   .lcd-freq,.lcd-freq-ghost{font-size:22px}
   .lcd-flags{font-size:9px}
   .smeter .segs{max-width:220px}
+  .rf-deck{grid-template-columns:1fr}
+  .rf-deck-r{flex-direction:row;flex-wrap:wrap;justify-content:center}
 }
 </style>
 </head>
@@ -332,9 +343,38 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
       <button id="kDw" onclick="cycleDualWatch()" title="dual watch off / A / B">DW</button>
       <button id="kScan" onclick="toggleScan()" title="channel scan">SCAN</button>
       <button id="kAB" onclick="swapAB()" title="swap VFO A and B channels">A/B</button>
+      <button id="kMon" title="hold: open squelch (monitor)">MON</button>
+      <button id="kTcall" title="hold: transmit 1750 Hz tone burst (repeater access)">1750</button>
       <span class="gap"></span>
+      <button onclick="editActiveCh()" title="edit the active channel — tones, power, bandwidth">CH SET</button>
       <button onclick="stepCh(-1)" title="active VFO down one channel">▼ CH</button>
       <button onclick="stepCh(1)" title="active VFO up one channel">CH ▲</button>
+    </div>
+    <div class="rf-deck">
+      <div class="rf-deck-l">
+        <div class="rf-ctl"><span class="rf-lbl">VFO A</span>
+          <select id="chSelA" onchange="selectCh('a',Number(this.value))" title="VFO A channel"></select></div>
+        <div class="rf-ctl"><span class="rf-lbl">VFO B</span>
+          <select id="chSelB" onchange="selectCh('b',Number(this.value))" title="VFO B channel"></select></div>
+        <div class="rf-ctl"><span class="rf-lbl">VOL</span>
+          <input type="range" id="vol" min="0" max="15" step="1" onchange="setVolume(this.value)"
+            title="radio speaker volume">
+          <span class="val" id="volVal">–</span></div>
+        <div class="rf-ctl"><span class="rf-lbl">SQL</span>
+          <input type="range" id="sql" min="0" max="9" step="1" onchange="setSquelch(this.value)"
+            title="squelch level">
+          <span class="val" id="sqlVal">–</span></div>
+        <div class="rf-ctl"><span class="rf-lbl">SPKR</span>
+          <label class="check" style="min-width:0;padding:0" title="stream radio RX audio to this browser">
+            <input type="checkbox" id="rxOn"> listen</label>
+          <input type="range" id="rxVol" min="0" max="100" value="80" title="browser playback volume">
+          <span class="val" id="rxVolVal">80</span></div>
+      </div>
+      <div class="rf-deck-r">
+        <button id="pttBtn" class="ptt" disabled>PTT</button>
+        <span id="txState" class="pill">idle</span>
+        <div id="pttHint" class="dimtxt" style="font-size:11px;text-align:center;max-width:150px"></div>
+      </div>
     </div>
   </div>
   <div class="card" id="connectCard">
@@ -378,12 +418,6 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
         <button onclick="powerRadio(1)">Power on</button>
         <button class="danger" onclick="powerRadio(0)">Off</button>
       </div>
-      <div class="row"><label>Volume</label>
-        <input type="range" id="vol" min="0" max="15" step="1" onchange="setVolume(this.value)">
-        <span class="val" id="volVal">–</span></div>
-      <div class="row"><label>Squelch</label>
-        <input type="range" id="sql" min="0" max="9" step="1" onchange="setSquelch(this.value)">
-        <span class="val" id="sqlVal">–</span></div>
       <div class="row"><label>Channel scan</label>
         <div class="seg" id="scanSeg">
           <button data-v="0">Off</button><button data-v="1">On</button>
@@ -504,17 +538,15 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
       streamed to this browser over a WebSocket. Press &amp; hold PTT to
       transmit your mic to the air — the radio keys itself when audio flows.</p>
     <div id="audioStatus" class="kv">checking audio bridge…</div>
-    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px">
-      <button id="pttBtn" class="ptt" disabled>PTT</button>
-      <label style="display:flex;align-items:center;gap:6px">
-        <input type="checkbox" id="rxOn"> Listen (RX)</label>
-      <label style="display:flex;align-items:center;gap:6px">RX vol
-        <input type="range" id="rxVol" min="0" max="100" value="80" style="width:110px"></label>
-      <span id="txState" class="pill">idle</span>
-    </div>
     <p class="muted" style="font-size:12px;margin-top:10px">
-      PTT holds while the button (or the <b>Space</b> bar, on this tab) is down.
-      First use asks for microphone permission.</p>
+      The PTT button, speaker (listen) switch and volumes live on the
+      <b>Dashboard</b> radio face — this page is bridge status and diagnostics.
+      PTT holds while the button (or the <b>Space</b> bar, on the Dashboard) is
+      down; first use asks for microphone permission.</p>
+  </div>
+  <div class="card">
+    <h2>RF status <span class="muted" style="font-size:12px">(live, partially decoded — FINDINGS §11e)</span></h2>
+    <div id="rfDiag" class="kv">waiting for RF poll… (Dashboard or Voice tab must be open, radio connected)</div>
   </div>
   <div class="card">
     <h2>Keying &amp; relay <span class="muted" style="font-size:12px">(experimental — validating on hardware)</span></h2>
@@ -730,7 +762,7 @@ $("tabs").addEventListener("click",e=>{
   if(t==="aprs"&&state.connected&&!state.bss)loadBss(0);
   if(t==="aprs")setTimeout(()=>{initAprsMap();updateAprsMap();},0);
   if(t==="settings")renderSettingsTab();
-  if(t==="voice")refreshAudio();
+  if(t==="voice"||t==="dash")refreshAudio();
 });
 
 /* ---------------- helpers ---------------- */
@@ -776,19 +808,20 @@ function openWs(){
   wsTimer=setInterval(()=>{if(ws.readyState===1)ws.send("ping");},25000);
 }
 function handleMsg(kind,d){
-  if(kind==="snapshot"){state={...state,...d};renderAll();
+  if(kind==="snapshot"){state={...state,...d};renderAll();refreshAudio();
     if(d.connected&&!pfValid)loadPf(0);
     if(d.connected&&!(d.channels&&d.channels.length))loadChannels(1);}
   else if(kind==="connection"){
     state.connected=d.connected;renderHeader();
     logLine(d.connected?"radio connected":"radio disconnected — press Connect when ready");
+    refreshAudio();
     if(d.connected){loadChannels(0);loadBss(0);loadPf(0);loadFm();}
   }
-  else if(kind==="ht_status"){state.ht_status=d;renderStatus();}
+  else if(kind==="ht_status"){state.ht_status=d;trackRx(d);renderStatus();}
   else if(kind==="rf"){                 // fast S-meter poll
-    if(d.ht_status)state.ht_status=d.ht_status;
+    if(d.ht_status){state.ht_status=d.ht_status;trackRx(d.ht_status);}
     if(d.rf_raw)state.rf_raw=d.rf_raw;
-    renderLcd();
+    renderLcd();renderRfDiag();
   }
   else if(kind==="pf"){state.pf=d;renderPf();}
   else if(kind==="poll"){Object.assign(state,d);renderStatus();}
@@ -815,6 +848,27 @@ function renderAll(){renderHeader();renderStatus();renderSettings();
 
 /* ---------------- virtual radio face ---------------- */
 function chOf(i){return state.channels.find(c=>c.channel_id===i);}
+
+/* The VR-N7600's status bit1 ("is_in_tx") is really "TX OR ~5 s post-RX
+   channel-hold" — it latches after every squelch close (live-RE'd
+   2026-07-16, FINDINGS §11e), which made the TX lamp light on RECEIVE.
+   Disambiguate: our own PTT is truth; else RF_STATUS byte10 bit2 marks the
+   hold window (0xa5 tail vs 0xa1 real TX); else assume tail within 6 s of
+   the last RX. */
+let lastRxT=0;
+function trackRx(s){if(s&&(s.is_in_rx||s.is_sq))lastRxT=Date.now();}
+function isTxReal(s){
+  if(!(s&&s.is_in_tx))return false;
+  if(keyed)return true;                 // we keyed it — definitely TX
+  if(Date.now()-lastRxT<6000)return false;  // hold window follows RX; rf_raw
+                                            // is up to a poll (2 s) stale, so
+                                            // the timer must rule here
+  if(state.rf_raw){
+    const b10=parseInt(state.rf_raw.split(" ")[10],16);
+    if(!isNaN(b10))return !(b10&0x04);
+  }
+  return true;
+}
 
 /* LCD colour (browser preference, not a radio setting) */
 const LCD_THEMES=["amber","green","blue","white"];
@@ -885,11 +939,13 @@ function vfoFlags(c){
 function renderLcd(){
   const st=state.settings,s=state.ht_status,conn=state.connected;
   const on=conn&&s&&s.is_power_on;
-  $("rfLed").className="rf-led"+(s&&s.is_in_tx?" tx":(on?" on":""));
+  const tx=isTxReal(s);
+  $("rfLed").className="rf-led"+(tx?" tx":(on?" on":""));
   $("iPwr").className="lcd-ic"+(on?"":" faint");
   $("iPwr").textContent=conn?(on?"PWR":"OFF"):"PWR";
-  $("iTx").classList.toggle("hid",!(s&&s.is_in_tx));
-  $("iBusy").classList.toggle("hid",!(s&&(s.is_in_rx||s.is_sq)&&!s.is_in_tx));
+  $("iTx").classList.toggle("hid",!tx);
+  $("iBusy").classList.toggle("hid",
+    !(s&&!tx&&(s.is_in_rx||s.is_sq||s.is_in_tx)));   // is_in_tx w/o real TX = channel-hold
   $("iScan").classList.toggle("hid",!(s&&s.is_scan));
   $("iDw").classList.toggle("hid",!(st&&st.double_channel));
   if(st&&st.double_channel)$("iDw").textContent="DW·"+(st.double_channel===1?"A":"B");
@@ -932,7 +988,7 @@ function renderLcd(){
     $("lcd"+el).classList.toggle("active",isCur);
     // meter targets: the radio reports one RSSI — it belongs to the current ch
     const m=SM[vfo];
-    m.tx=!!(isCur&&s&&s.is_in_tx);
+    m.tx=!!(isCur&&tx);
     m.target=(isCur&&s&&s.rssi>=0&&(s.is_in_rx||s.is_sq))?s.rssi:
              (isCur&&s&&s.rssi>=0?Math.min(s.rssi,1):0);
   }
@@ -998,7 +1054,7 @@ function renderHeader(){
 }
 function renderStatus(){
   const s=state.ht_status;
-  $("bPower").hidden=!s;$("bTx").hidden=!(s&&s.is_in_tx);
+  $("bPower").hidden=!s;$("bTx").hidden=!isTxReal(s);
   $("bRx").hidden=!(s&&s.is_in_rx);$("bScan").hidden=!(s&&s.is_scan);
   $("bGps").hidden=!(s&&s.is_gps_locked);
   if(s){
@@ -1084,6 +1140,26 @@ function renderChannels(){
     tb.appendChild(tr);
   }
   $("chEmpty").style.display=state.channels.length?"none":"";
+  renderChSelects();
+}
+/* VFO A/B channel pickers on the radio face */
+function renderChSelects(){
+  const st=state.settings||{};
+  const opts=state.channels.slice().sort((x,y)=>x.channel_id-y.channel_id)
+    .map(c=>`<option value="${c.channel_id}">CH${c.channel_id+1}  ${esc(c.name)||mhz(c.rx_freq)+" MHz"}</option>`)
+    .join("")||'<option value="">—</option>';
+  for(const [vfo,id] of [["a","chSelA"],["b","chSelB"]]){
+    const sel=$(id);if(!sel)continue;
+    if(sel.dataset.opts!==opts){sel.innerHTML=opts;sel.dataset.opts=opts;}
+    const cur=st[vfo==="a"?"channel_a":"channel_b"];
+    if(cur!=null&&sel.value!==String(cur))sel.value=String(cur);
+  }
+}
+function editActiveCh(){
+  const st=state.settings;
+  if(!st||!state.channels.length){logLine("CH SET: channels not loaded yet");return;}
+  const c=chOf(st[activeVfo()==="a"?"channel_a":"channel_b"]??0);
+  if(c)openEditor(c);else logLine("CH SET: active channel not in memory");
 }
 
 /* ---------------- APRS ---------------- */
@@ -1660,8 +1736,17 @@ async function refreshAudio(){
       `Bridge: ${s.have_audio?"ready (ffmpeg+winrt)":"<span class='muted'>ffmpeg/winrt missing</span>"} · `+
       `AOC audio link: ${link} · radio AOC flag: ${s.aoc_connected?"<b>yes</b>":"no"}<br>`+
       `${s.rate} Hz mono SBC`+(s.error?` · <span class='muted'>last error: ${esc(s.error)}</span>`:"");
-    $("pttBtn").disabled=!s.have_audio;
-  }catch(e){$("audioStatus").innerHTML="audio status error: "+esc(e.message);}
+    const ok=s.have_audio&&state.connected;
+    $("pttBtn").disabled=!ok;
+    if(!keyed)$("pttHint").textContent=
+      ok?"hold to talk — Space works too":
+      !state.connected?"connect the radio to enable PTT":
+      "audio bridge not ready — see Voice tab";
+  }catch(e){
+    $("audioStatus").innerHTML="audio status error: "+esc(e.message);
+    if(!DEMO){$("pttBtn").disabled=true;
+      if(!keyed)$("pttHint").textContent="audio bridge unreachable";}
+  }
 }
 
 function openAudioWs(){
@@ -1692,7 +1777,8 @@ function playRx(buf){
   if(rxNext<now)rxNext=now+0.06;          // small jitter buffer
   src.start(rxNext);rxNext+=ab.duration;
 }
-function setRxVol(){if(rxGain)rxGain.gain.value=$("rxVol").value/100;}
+function setRxVol(){const v=$("rxVol").value;
+  $("rxVolVal").textContent=v;if(rxGain)rxGain.gain.value=v/100;}
 
 function setListen(on){
   rxEnabled=on;$("rxOn").checked=on;
@@ -1701,38 +1787,67 @@ function setListen(on){
 }
 
 async function ensureMic(){
-  if(micReady)return micReady;
-  micReady=navigator.mediaDevices.getUserMedia({audio:{channelCount:1,
-    echoCancellation:false,noiseSuppression:false,autoGainControl:true}});
+  if(!micReady)
+    micReady=navigator.mediaDevices.getUserMedia({audio:{channelCount:1,
+      echoCancellation:false,noiseSuppression:false,autoGainControl:true}})
+      .catch(e=>{micReady=null;throw e;});   // allow retry after a denied/failed grab
   txStream=await micReady;return micReady;
 }
 
-async function startTx(){
+let txSilence=null;
+async function startTx(toneHz){
   if(keyed||$("pttBtn").disabled)return;
   keyed=true;setTxUi(true);
+  let micOk=false;
+  if(!toneHz){
+    try{await ensureMic();micOk=true;}
+    catch(e){logLine("PTT: no mic ("+esc(e.message)+") — keying silent carrier");}
+  }
   try{
-    await ensureMic();
     openAudioWs();
-    txCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:RADIO_RATE});
-    if(txCtx.state==="suspended")await txCtx.resume();
-    txSrc=txCtx.createMediaStreamSource(txStream);
-    txProc=txCtx.createScriptProcessor(512,1,1);
-    txProc.onaudioprocess=e=>{
-      if(!keyed||!audioWs||audioWs.readyState!==1)return;
-      const f=e.inputBuffer.getChannelData(0);
-      const out=new Int16Array(f.length);
-      for(let i=0;i<f.length;i++){let s=Math.max(-1,Math.min(1,f[i]));
-        out[i]=s<0?s*32768:s*32767;}
-      audioWs.send(out.buffer);
-    };
-    txSrc.connect(txProc);txProc.connect(txCtx.destination);
+    if(micOk){
+      txCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:RADIO_RATE});
+      if(txCtx.state==="suspended")await txCtx.resume();
+      txSrc=txCtx.createMediaStreamSource(txStream);
+      txProc=txCtx.createScriptProcessor(512,1,1);
+      txProc.onaudioprocess=e=>{
+        if(!keyed||!audioWs||audioWs.readyState!==1)return;
+        const f=e.inputBuffer.getChannelData(0);
+        const out=new Int16Array(f.length);
+        for(let i=0;i<f.length;i++){let s=Math.max(-1,Math.min(1,f[i]));
+          out[i]=s<0?s*32768:s*32767;}
+        audioWs.send(out.buffer);
+      };
+      txSrc.connect(txProc);txProc.connect(txCtx.destination);
+    }else{
+      // generated audio: a tone burst (T-CALL), or silence when there is
+      // no microphone — the radio still keys, like a mic-less base station
+      let ph=0;
+      txSilence=setInterval(()=>{
+        if(!(keyed&&audioWs&&audioWs.readyState===1))return;
+        const out=new Int16Array(512);
+        if(toneHz){
+          const w=2*Math.PI*toneHz/RADIO_RATE;
+          for(let i=0;i<out.length;i++)out[i]=Math.round(26000*Math.sin(ph+w*i));
+          ph=(ph+w*out.length)%(2*Math.PI);
+        }
+        audioWs.send(out.buffer);
+      },16);
+    }
     await post("/api/ptt/1");
-  }catch(e){logLine("PTT error: "+esc(e.message));stopTx();}
+    if(toneHz)$("pttHint").textContent="sending "+toneHz+" Hz tone burst";
+    else if(!micOk)$("pttHint").textContent="⚠ no microphone — transmitting silent carrier";
+  }catch(e){
+    logLine("PTT error: "+esc(e.message));
+    $("pttHint").textContent="PTT failed: "+e.message;
+    stopTx();
+  }
 }
 async function stopTx(){
   if(!keyed)return;
   keyed=false;setTxUi(false);
   try{await post("/api/ptt/0");}catch(e){logLine("unkey error: "+esc(e.message));}
+  if(txSilence){clearInterval(txSilence);txSilence=null;}
   if(txProc){txProc.disconnect();txProc.onaudioprocess=null;txProc=null;}
   if(txSrc){txSrc.disconnect();txSrc=null;}
   if(txCtx){txCtx.close();txCtx=null;}
@@ -1741,6 +1856,24 @@ async function stopTx(){
 function setTxUi(on){
   $("pttBtn").classList.toggle("tx",on);
   const p=$("txState");p.textContent=on?"TRANSMIT":"idle";p.classList.toggle("txon",on);
+  if(on)$("pttHint").textContent="on air — release to unkey";
+  else if(!DEMO)refreshAudio();   // restores the idle hint + re-checks the bridge
+}
+
+/* READ_RF_STATUS(52) partial decode — RE'd live 2026-07-16, FINDINGS §11e:
+   byte10: 0x81 idle · 0xa1 transmitting · 0xa5 post-RX channel-hold;
+   byte1 drops 0x29-2b → 0x00 during TX/hold; bytes2-3 rise during open
+   squelch (per-VFO noise level candidates); byte4 pegs 0x7f in TX/hold. */
+function renderRfDiag(){
+  const el=$("rfDiag");if(!el||!state.rf_raw)return;
+  const b=state.rf_raw.split(" ").map(h=>parseInt(h,16));
+  const s=state.ht_status||{};
+  const st=(b[10]&0x20)?((b[10]&0x04)?"CHANNEL-HOLD (post-RX tail)":"TRANSMITTING")
+           :((s.is_in_rx||s.is_sq)?"RECEIVING":"idle");
+  el.innerHTML=
+    `state <b>${st}</b> · rssi ${s.rssi??"–"}/15 · byte1 ${b[1]} · `+
+    `lvl2/3 ${b[2]}/${b[3]} · lvl4 ${b[4]}<br>`+
+    `<span class="muted" style="font-family:ui-monospace,monospace;font-size:11px">${state.rf_raw}</span>`;
 }
 
 async function setRelay(on){try{await post("/api/audio/relay/"+on);
@@ -1750,23 +1883,47 @@ async function phoneStatus(st){try{const r=await post("/api/phone_status",{state
   $("voiceProbe").innerHTML="phone_status "+st+" → reply "+(r.reply_hex||"—");}
   catch(e){$("voiceProbe").innerHTML="phone_status: "+esc(e.message);}}
 
+/* MON — momentary squelch-open, like the monitor button on a real face.
+   (DO_PROG_FUNC(66) TOGGLE_MONITOR is ACKed but inert on fw147.) */
+let monPrev=null;
+async function monDown(){
+  const st=state.settings;if(!st||monPrev!=null)return;
+  monPrev=st.squelch_level??1;$("kMon").classList.add("lit");
+  try{await post("/api/settings",{updates:{squelch_level:0}});
+    st.squelch_level=0;renderSettings();}
+  catch(e){logLine("monitor: "+e.message);monPrev=null;$("kMon").classList.remove("lit");}
+}
+async function monUp(){
+  if(monPrev==null)return;
+  const v=monPrev;monPrev=null;$("kMon").classList.remove("lit");
+  try{await post("/api/settings",{updates:{squelch_level:v}});
+    state.settings.squelch_level=v;renderSettings();}
+  catch(e){logLine("monitor restore: "+e.message);}
+}
+
+function holdKey(el,down,up){
+  el.addEventListener("pointerdown",e=>{e.preventDefault();el.setPointerCapture(e.pointerId);down();});
+  el.addEventListener("pointerup",e=>{e.preventDefault();up();});
+  el.addEventListener("pointercancel",up);
+  el.addEventListener("lostpointercapture",up);
+}
 function initVoice(){
-  const b=$("pttBtn");
-  b.addEventListener("pointerdown",e=>{e.preventDefault();b.setPointerCapture(e.pointerId);startTx();});
-  b.addEventListener("pointerup",e=>{e.preventDefault();stopTx();});
-  b.addEventListener("pointercancel",stopTx);
-  b.addEventListener("lostpointercapture",stopTx);
+  holdKey($("pttBtn"),()=>startTx(),stopTx);
+  holdKey($("kTcall"),()=>startTx(1750),stopTx);
+  holdKey($("kMon"),monDown,monUp);
   $("rxOn").addEventListener("change",e=>setListen(e.target.checked));
   $("rxVol").addEventListener("input",setRxVol);
-  // hold Space to talk, only while the Voice tab is visible
-  addEventListener("keydown",e=>{if(e.code==="Space"&&$("tab-voice").classList.contains("on")
-    &&!e.repeat&&document.activeElement.tagName!=="INPUT"){e.preventDefault();startTx();}});
+  // hold Space to talk, while the Dashboard or Voice tab is visible
+  addEventListener("keydown",e=>{if(e.code==="Space"&&!e.repeat
+    &&($("tab-dash").classList.contains("on")||$("tab-voice").classList.contains("on"))
+    &&!/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(document.activeElement.tagName))
+    {e.preventDefault();startTx();}});
   addEventListener("keyup",e=>{if(e.code==="Space"&&keyed){e.preventDefault();stopTx();}});
 }
 initVoice();
 
 if(DEMO){startDemo();}
-else{openWs();loadConnConfig();}
+else{openWs();loadConnConfig();refreshAudio();}
 </script>
 </body>
 </html>

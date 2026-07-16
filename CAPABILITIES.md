@@ -48,7 +48,7 @@ Legend: ✅ in web UI · 🔧 backend only (API, no UI yet) · 🕳 not implemen
 | 48 | SET_TRUSTED_DEVICE_NAME | rename bond | 🕳 |
 | 49/50 | SET/GET_VOC | vocoder param (DMR) | 🕳 |
 | 51 | SET_PHONE_STATUS | tell radio the phone state | 🕳 |
-| 52 | READ_RF_STATUS | live per-VFO RF levels (31B; vendor RF-status screen shows rssi/rssi2/rssi_r/rssi_rr + noise×4) | 🔬 polled raw, decode next live session |
+| 52 | READ_RF_STATUS | live per-VFO RF levels (31B; byte10 0x81 idle / 0xa1 TX / 0xa5 post-RX hold — drives the TX lamp; FINDINGS §11e-2) | ✅ RF status card (partial decode) |
 | 53 | PLAY_TONE | play tone on radio speaker | 🔧 debug |
 | 55/56/75 | GET_PF / SET_PF / GET_PF_ACTIONS | programmable buttons — **fully decoded, §2** | 🔧 NEW: /api/pf |
 | 57 | RX_DATA | (reply channel for data) | ✅ via events |
@@ -56,7 +56,7 @@ Legend: ✅ in web UI · 🔧 backend only (API, no UI yet) · 🕳 not implemen
 | 61/62 | SET/GET_PP_ID | ?? (pp_id in app settings UI) | 🕳 |
 | 63/64 | READ/WRITE_ADVANCED_SETTINGS2 | 61B adv block #2 | 🔬 raw captured |
 | 65 | UNLOCK | unlock radio (ch_data_lock etc.) | 🕳 |
-| 66 | DO_PROG_FUNC | trigger a PF effect remotely (remote button press!) | 🔬 payload = effect code? test live |
+| 66 | DO_PROG_FUNC | trigger a PF effect remotely — **tested live: ACKs (00) but INERT on fw147**, every effect ignored | 🕳 dead end (API /api/progfunc kept for other fw) |
 | 67/68 | SET/GET_MSG | canned/stored messages | 🕳 |
 | 69 | BLE_CONN_PARAM | BLE tuning | 🕳 |
 | 70 | SET_TIME | sync radio clock | 🕳 planned (1-click) |
@@ -127,15 +127,15 @@ btn3: double=PREV_CHANNEL(7), rest DISABLE
 | NOAA weather (`noaa_group`,`wx_ch`,`wx_mode`) | settings wx_mode/noaa_ch | ✅ fields |
 | Programmable buttons (`programmable_button`,`ptt_actions`) | 55/56/75 | 🔧 NEW panel |
 | RF status diagnostics (`show_rf_status`, rssi×4 + noise×4) | 52 | 🔬 raw poll |
-| DTMF keyboard / decode (`dtmf_keyboard`,`dtmf_decode`,`dtmf_speed`) | app-side audio via HFP | 🕳 phase 3 (audio) |
+| DTMF keyboard / decode (`dtmf_keyboard`,`dtmf_decode`,`dtmf_speed`) | app-side audio — now feasible: generate dual tones into the AOC TX path (same as the 1750 key) | 🕳 easy next |
 | Morse code tools (`morse_code_*`) | app-side audio | 🕳 phase 3 |
-| T-Call / tone burst (`t_call`,`tcall`) | PF effect 9 / DO_PROG_FUNC | 🔬 |
+| T-Call / tone burst (`t_call`,`tcall`) | 1750 Hz generated into the AOC TX path (DO_PROG_FUNC inert) | ✅ Dashboard 1750 key |
 | Freq scan (`freq_scan`) | FREQ_MODE_* + event 14 | 🕳 |
 | Satellite tracking (`amateur_radio_satellite`,`tle`,`min_elevation_angle`) | 77 | 🕳 |
 | Engineering menu (vco/power_pa/rssi_offset/noise_offset/agc/de-emph…) | 29/30/37/38/40/44/46/47 | 🔬 debug console only — calibration, handle with care |
 | Firmware update (`firmware_check_update`) | vendor cloud + DFU | ❌ out of scope (by design) |
 | Cloud/account/teams/chat/maps downloads | gRPC to vendor servers | ❌ **explicit non-goal — no telemetry** |
-| Audio: hold-to-speak / intercom (`hold_to_speak`,`float_ptt`,`audio`) | HFP (0000111F) + aghfp settings | 🕳 phase 3 = voice bridge + PTT |
+| Audio: hold-to-speak / intercom (`hold_to_speak`,`float_ptt`,`audio`) | **AOC RFCOMM + SBC bridge (HFP was a dead end)** | ✅ Dashboard PTT + listen (FINDINGS §12b) |
 
 ## 5. S-METER TRUTH CHAIN (what "genuine sync" means here)
 

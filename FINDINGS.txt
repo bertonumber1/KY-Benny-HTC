@@ -455,6 +455,31 @@ READ_RF_STATUS(52) LIVE SAMPLES (idle, squelch closed, DW A/B) — 31B:
   NEXT: repeat sampling with a real signal in (squelch open) to pin the
   rssi<->byte mapping, then expose decoded fields in /api and the LCD.
 
+11e-2. 2026-07-16 (session 4) — SQUELCH-OPEN + TX SAMPLES CAPTURED.
+  Method: SQL->0 forces noise RX (no off-air signal needed); a 1.5 s
+  silence TX over the AOC bridge gave the TX reference. Samples:
+    idle    : ht 80 41 00 04 | rf 00 2b 24 26 40 30 32 87 00 02 81 20 ...
+    RX open : ht 90 41 20 04 | rf 00 29 31 33 4x 07 09 07 00 02 81 20 ...
+    real TX : ht c0 43 00 04 | rf 00 00 24 26 7f 30 32 07 00 02 a1 20 ...
+    RX tail : ht c0 41 00 04 | rf 00 00 24 26 7f 30 32 07 00 02 a5 20 ...
+  Decoded:
+  * HT_STATUS bit1 ("is_in_tx" in benlink/HTCommander) is really
+    "TX **or** ~5 s post-RX channel-hold": after EVERY squelch close the
+    radio pushes bit1=1 for ~5 s, then 0. This is why the web TX lamp lit
+    on receive. Same value from event and poll — radio-genuine, not a
+    decode bug.
+  * RF_STATUS byte10 disambiguates: 0x81 idle · 0xa1 real TX · 0xa5 hold
+    (bit5 = PA path context, bit2 = hold window). byte1 0x29-2b idle/RX ->
+    0x00 in TX/hold; bytes2-3 24 26 idle -> 31 33 with squelch open
+    (noise-floor levels); byte4 pegs 0x7f in TX/hold; byte7 0x87 -> 0x07
+    when b1 low.
+  * Web UI now derives the TX lamp: our own PTT = TX; else rf byte10
+    bit2 clear = TX; else within 6 s of RX = channel-hold (shown BUSY).
+  * DO_PROG_FUNC(66) [effect, state] is ACKed (status 00) for ANY effect
+    but is INERT on fw147 — VOL_DOWN/VOL_UP cycles left volume untouched
+    (matches MAIN_PTT finding in §12). Remote "button press" is a dead
+    end; use the real setting writes instead (MON key = SQL 0/restore).
+
 WEB UI 2026-07-16: LCD rebuilt as a radio front panel — DSEG 7-seg/14-seg
   fonts (vendored, static/vendor/dseg, SIL-OFL), amber/green/ice backlight
   themes (persisted), dual-VFO rows w/ CH+name+tone+power flags, segmented

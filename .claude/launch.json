@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "webui",
+      "runtimeExecutable": "C:\\Users\\scanner\\HT-Ylianst\\vrn7600-webui\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["app.py"],
+      "cwd": "C:\\Users\\scanner\\HT-Ylianst\\vrn7600-webui",
+      "port": 8099
+    }
+  ]
+}
