@@ -497,14 +497,42 @@ Implemented (all wired + smoke-tested; audio needs the radio awake to prove):
   - static    Voice tab: press&hold PTT (pointer + Space), Listen(RX)+vol,
     browser AudioContext forced to 8 kHz so nobody resamples.
 
-OPEN (needs radio awake + operator, per one-connection gotcha):
-  [ ] Which gate actually keys TX? radio.ptt() tries DO_PROG_FUNC(66) payload
-      [MAIN_PTT=13, down/up]; set_phone_status(51) [state 0..3] is the other
-      candidate (HFP "call active" is what relays SCO to air). Probe both.
-  [ ] Does opening WDM-KS #6 auto-establish SCO, or must a "call" be active
-      first? If silent, drive phone_status=active (or enable audio relay) then
-      retry the TX stream.
-  [ ] Confirm RX = off-air audio (not just sidetone) and end-to-end latency.
+LIVE-TESTED 2026-07-16 (radio on 144.9625, control via serial COM5):
+  [x] DO_PROG_FUNC(66) [MAIN_PTT=13, 1/0] — radio replies status 00 (accepted)
+      but is_in_tx NEVER goes true. Same for SET_PHONE_STATUS(51) state 3/0.
+      Opening WDM-KS output #6 succeeds but is_hfp_connected stays false —
+      opening the endpoint does NOT raise SCO. ==> HFP is NOT the vendor
+      voice path. HFP endpoints exist but are a dead end for PTT.
+
+12b. THE REAL AUDIO PATH — "BS AOC" vendor RFCOMM channel (from HTCommander
+     src: windows/runner/bluetooth_classic_plugin.cpp, lib/radio/
+     audio_engine.dart, lib/radio/radio_audio.dart — confirmed working code
+     for these radios; explains the is_aoc_connected flag in HT_STATUS):
+  - Service UUID 39144315-32FA-40DB-85ED-FBFEBA2D86E6 (RFCOMM ch 2);
+    fallback Generic Audio 0x1203. NO Windows COM port is auto-created for
+    a vendor UUID -> connect via WinRT RfcommDeviceService + StreamSocket
+    (winrt-Windows.Devices.Bluetooth.Rfcomm + winrt-Windows.Networking.Sockets
+    — INSTALLED in the venv).
+  - Framing: 0x7e-delimited (HDLC-ish), 0x7d escape = next byte XOR 0x20.
+    First unescaped byte = cmd:
+        0x00 TX audio (us->radio; also RX variant), 0x03 RX audio,
+        0x01 audio end, 0x02 audio ACK, 0x09 TX echo (metering only).
+    Payload after cmd byte = concatenated SBC frames (<300 B per 0x7e frame).
+  - Codec: SBC 32 kHz mono, 16 blocks, 8 subbands, loudness allocation,
+    bitpool 18 (radio default; 40 confirmed working OTA, 124 rejected).
+  - PTT: radio KEYS AUTOMATICALLY when SBC audio frames arrive on this
+    channel (pace at real-time, ~64000 B/s PCM); UNKEY by sending the end
+    frame: 7e 01 00 01 00 00 00 00 00 00 7e. No control-channel command.
+  - scratchpad/aoc_probe.py written (WinRT connect + frame dump), not yet
+    run against the radio.
+
+OPEN:
+  [ ] Run aoc_probe.py: confirm connect, is_aoc_connected goes true, RX
+      frames arrive when squelch opens.
+  [ ] SBC codec in Python: ffmpeg pipe (has SBC de/encoder) vs pure-python
+      port of HTCommander's dart SBC (src/lib/sbc/).
+  [ ] Rewire audio.py/Voice tab: AOC bridge, 32 kHz AudioContext, PTT =
+      start/stop SBC stream (keep /api/ptt semantics). HFP code can go.
 
 ------------------------------------------------------------------------
 13. REMOTE ACCESS  (control from outside the LAN — built 2026-07-16)

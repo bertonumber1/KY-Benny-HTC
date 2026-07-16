@@ -2,7 +2,9 @@
 
 Transports:
   * BLE GATT via bleak (preferred)
-  * Classic Bluetooth RFCOMM (GAIA SPP) via native AF_BLUETOOTH socket
+  * Classic Bluetooth RFCOMM (GAIA SPP) via native AF_BLUETOOTH socket (Linux)
+  * GAIA SPP over a bonded serial port, e.g. Windows "Standard Serial over
+    Bluetooth link (COMx)" — the reliable classic path on Windows
 
 Exposes a high-level async API plus an event callback for radio-pushed
 notifications (status, channel and settings changes, RX data, position).
@@ -125,6 +127,68 @@ class RfcommTransport:
                 pass
 
 
+class SerialTransport:
+    """GAIA-framed stream over a bonded SPP serial port (Windows COMx)."""
+
+    def __init__(self, port: str, baud: int = 115200):
+        self.port = port
+        self.baud = baud
+        self.ser = None
+        self._deframer = GaiaDeframer()
+        self.on_frame = None
+        self.on_disconnect = None
+        self._reader_task = None
+        self._stop = False
+
+    async def connect(self):
+        import serial  # lazy: pyserial only needed for this transport
+        loop = asyncio.get_running_loop()
+        self.ser = await loop.run_in_executor(
+            None, lambda: serial.Serial(self.port, baudrate=self.baud,
+                                        timeout=0.2))
+        self._stop = False
+        self._reader_task = loop.run_in_executor(None, self._reader, loop)
+        log.info("serial GAIA connected on %s", self.port)
+
+    def _reader(self, loop: asyncio.AbstractEventLoop):
+        try:
+            while not self._stop and self.ser:
+                data = self.ser.read(512)
+                if not data:
+                    continue
+                for group, cmd, payload in self._deframer.feed(data):
+                    if self.on_frame:
+                        loop.call_soon_threadsafe(
+                            self.on_frame, group, cmd, payload)
+        except Exception as e:                            # noqa: BLE001
+            if not self._stop:
+                log.warning("serial reader died: %s", e)
+        finally:
+            if self.on_disconnect and not self._stop:
+                loop.call_soon_threadsafe(self.on_disconnect)
+
+    async def send(self, group: int, cmd: int, payload: bytes):
+        if not self.ser:
+            raise ConnectionError("not connected")
+        wire = bp.gaia_frame(group, cmd, payload)
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.ser.write, wire)
+
+    async def close(self):
+        self._stop = True
+        ser, self.ser = self.ser, None
+        if ser:
+            try:
+                ser.close()
+            except Exception:                             # noqa: BLE001
+                pass
+        if self._reader_task:
+            try:
+                await self._reader_task
+            except Exception:                             # noqa: BLE001
+                pass
+
+
 class BleTransport:
     def __init__(self, mac: str):
         self.mac = mac
@@ -133,6 +197,15 @@ class BleTransport:
         self.on_disconnect = None
 
     async def connect(self):
+        # sounddevice/PortAudio (audio.py) initializes this thread's COM
+        # apartment as STA, which kills WinRT event callbacks — tell bleak
+        # STA is expected so it uses its own MTA worker instead of failing.
+        try:
+            from bleak.backends.winrt.util import allow_sta
+            allow_sta()
+        except ImportError:
+            pass                                  # non-Windows backend
+
         def disconnected(_):
             if self.on_disconnect:
                 self.on_disconnect()
@@ -198,14 +271,27 @@ class Radio:
     # ------------------------------------------------------------ transport
 
     async def connect(self, mac: str, transport: str = "auto",
-                      rfcomm_channel: int | None = None):
+                      rfcomm_channel: int | None = None,
+                      com_port: str | None = None):
         await self.disconnect()
         self.mac = mac.upper()
         errors = []
-        kinds = ["ble", "rfcomm"] if transport == "auto" else [transport]
+        if transport == "auto":
+            # a configured COM port is the most reliable classic path
+            # (Windows); BLE next; AF_BLUETOOTH RFCOMM is Linux-only.
+            kinds = (["serial", "ble"] if com_port else ["ble", "rfcomm"])
+        else:
+            kinds = [transport]
         for kind in kinds:
-            t = (BleTransport(self.mac) if kind == "ble"
-                 else RfcommTransport(self.mac, rfcomm_channel))
+            if kind == "serial":
+                if not com_port:
+                    errors.append("serial: no com_port configured")
+                    continue
+                t = SerialTransport(com_port)
+            elif kind == "ble":
+                t = BleTransport(self.mac)
+            else:
+                t = RfcommTransport(self.mac, rfcomm_channel)
             t.on_frame = self._on_frame
             t.on_disconnect = self._on_disconnect
             try:

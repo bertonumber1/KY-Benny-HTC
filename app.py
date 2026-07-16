@@ -40,8 +40,9 @@ CONFIG_PATH = DATA_DIR / "config.json"
 
 DEFAULT_CONFIG = {
     "mac": "",
-    "transport": "ble",        # auto | ble | rfcomm — user picks and presses Connect
+    "transport": "ble",        # auto | ble | rfcomm | serial — user picks and presses Connect
     "rfcomm_channel": None,
+    "com_port": None,          # bonded SPP port for transport "serial", e.g. "COM5"
     "port": 8099,
     "auto_connect": False,     # off by default; opt-in via the Connect card
     "status_poll_seconds": 15,  # doubles as keep-alive; keep < radio idle timeout
@@ -112,7 +113,8 @@ async def connect_radio() -> None:
     if not config.get("mac"):
         raise HTTPException(400, "no radio MAC configured — use scan first")
     await radio.connect(config["mac"], config.get("transport", "auto"),
-                        config.get("rfcomm_channel"))
+                        config.get("rfcomm_channel"),
+                        config.get("com_port"))
 
 
 async def keeper():
@@ -213,6 +215,7 @@ class ConnectBody(BaseModel):
     mac: str | None = None
     transport: str | None = None
     rfcomm_channel: int | None = None
+    com_port: str | None = None
 
 
 @app.post("/api/connect")
@@ -223,6 +226,8 @@ async def api_connect(body: ConnectBody):
         config["transport"] = body.transport
     if body.rfcomm_channel is not None:
         config["rfcomm_channel"] = body.rfcomm_channel
+    if body.com_port is not None:
+        config["com_port"] = body.com_port or None
     save_config(config)
     try:
         await connect_radio()
