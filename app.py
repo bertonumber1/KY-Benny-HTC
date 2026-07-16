@@ -85,13 +85,25 @@ async def broadcast(kind: str, data):
 
 radio.event_cb = broadcast
 
-# ---- voice bridge (HFP SCO <-> browser) --------------------------------
-bridge = audio.AudioBridge()
+# ---- voice bridge (AOC RFCOMM SBC <-> browser) --------------------------
+bridge = audio.AudioBridge(ffmpeg=config.get("ffmpeg_path"))
 audio_clients: set[WebSocket] = set()
 
 
+def _sync_bridge_addr() -> None:
+    """The AOC channel is opened by BT address; keep it current with config."""
+    mac = config.get("mac") or ""
+    try:
+        bridge.address = int(mac.replace(":", ""), 16)
+    except ValueError:
+        bridge.address = 0
+
+
+_sync_bridge_addr()
+
+
 async def _broadcast_rx(pcm: bytes) -> None:
-    """Push one RX PCM frame (int16 mono 8 kHz) to every audio-WS client."""
+    """Push one RX PCM frame (int16 mono 32 kHz) to every audio-WS client."""
     dead = []
     for ws in audio_clients:
         try:
@@ -115,6 +127,17 @@ async def connect_radio() -> None:
     await radio.connect(config["mac"], config.get("transport", "auto"),
                         config.get("rfcomm_channel"),
                         config.get("com_port"))
+    # The radio's BT SoC stays reachable in soft-off and classic connects
+    # succeed against the bond (live-verified) — so power it on when the
+    # operator connects, like HTCommander does. Opt out: wake_on_connect=false.
+    if (config.get("wake_on_connect", True) and radio.ht_status
+            and not radio.ht_status.is_power_on):
+        try:
+            await radio.set_power(True)
+            await radio.refresh_ht_status()
+            log.info("radio was soft-off — powered it on (wake_on_connect)")
+        except Exception as e:                    # noqa: BLE001
+            log.warning("wake_on_connect: %s", e)
 
 
 async def keeper():
@@ -172,7 +195,7 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(keeper())
     yield
     task.cancel()
-    bridge.close()
+    await bridge.close()
     await radio.disconnect()
 
 
@@ -601,15 +624,15 @@ async def api_auth_check():
 # ---------------------------------------------------------- voice / audio
 @app.get("/api/audio/devices")
 async def api_audio_devices():
-    """Every host audio endpoint, with the radio's Hands-Free ones flagged."""
-    return {"devices": audio.list_devices(), "status": bridge.status()}
+    """Legacy name — audio now rides the AOC RFCOMM channel, not OS devices."""
+    return {"devices": [], "status": bridge.status()}
 
 
 @app.get("/api/audio/status")
 async def api_audio_status():
     st = bridge.status()
-    st["hfp_connected"] = bool(radio.ht_status and
-                               getattr(radio.ht_status, "is_hfp_connected", False))
+    st["aoc_connected"] = bool(radio.ht_status and
+                               getattr(radio.ht_status, "is_aoc_connected", False))
     return st
 
 
@@ -622,25 +645,21 @@ async def api_audio_relay(on: int):
 
 @app.post("/api/ptt/{on}")
 async def api_ptt(on: int):
-    """Key (1) / unkey (0) transmit. On key: open the TX audio stream to the
-    radio, then assert PTT; on unkey: drop PTT, then close the stream."""
-    require_connected()
+    """Key (1) / unkey (0) transmit. AOC PTT is implicit: the radio keys
+    itself when SBC audio frames start arriving and unkeys on the end frame,
+    so key = start the encoder pipeline, unkey = flush + end frame. The
+    control-channel DO_PROG_FUNC path never keyed TX (FINDINGS §12)."""
     keyed = bool(on)
-    reply = None
     try:
         if keyed:
-            try:
-                bridge.start_tx()
-            except Exception as e:               # noqa: BLE001
-                log.warning("start_tx: %s", e)
-            reply = await radio.ptt(True)
+            _sync_bridge_addr()
+            await bridge.start_tx()
         else:
-            reply = await radio.ptt(False)
-            bridge.stop_tx()
+            await bridge.stop_tx()
     except Exception as e:                        # noqa: BLE001
         raise HTTPException(502, f"ptt: {e}")
     await broadcast("ptt", {"tx": keyed})
-    return {"tx": keyed, "reply_hex": reply.hex(" ") if reply else None}
+    return {"tx": keyed}
 
 
 class PhoneStatusBody(BaseModel):
@@ -662,7 +681,7 @@ async def api_phone_status(body: PhoneStatusBody):
 async def ws_audio(ws: WebSocket):
     """Binary PCM both ways: server->client = RX (radio off-air audio),
     client->server = TX (operator mic, only sent while PTT is keyed). Frames
-    are int16 mono little-endian at audio.RADIO_RATE (8 kHz)."""
+    are int16 mono little-endian at audio.RADIO_RATE (32 kHz)."""
     if not token_ok(ws.query_params.get("token")):
         await ws.close(code=1008)
         return
@@ -671,7 +690,8 @@ async def ws_audio(ws: WebSocket):
     try:
         if not bridge.rx_active:
             try:
-                bridge.start_rx(asyncio.get_running_loop())
+                _sync_bridge_addr()
+                await bridge.start_rx()
             except Exception as e:                # noqa: BLE001
                 await ws.send_text(json.dumps({"error": str(e)}))
         while True:
@@ -684,8 +704,8 @@ async def ws_audio(ws: WebSocket):
         pass
     finally:
         audio_clients.discard(ws)
-        if not audio_clients:                     # last listener left
-            bridge.stop_rx()
+        if not audio_clients and not bridge.tx_active:    # last listener left
+            await bridge.stop_rx()
 
 
 @app.websocket("/ws")

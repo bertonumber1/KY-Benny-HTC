@@ -526,13 +526,39 @@ LIVE-TESTED 2026-07-16 (radio on 144.9625, control via serial COM5):
   - scratchpad/aoc_probe.py written (WinRT connect + frame dump), not yet
     run against the radio.
 
-OPEN:
-  [ ] Run aoc_probe.py: confirm connect, is_aoc_connected goes true, RX
-      frames arrive when squelch opens.
-  [ ] SBC codec in Python: ffmpeg pipe (has SBC de/encoder) vs pure-python
-      port of HTCommander's dart SBC (src/lib/sbc/).
-  [ ] Rewire audio.py/Voice tab: AOC bridge, 32 kHz AudioContext, PTT =
-      start/stop SBC stream (keep /api/ptt semantics). HFP code can go.
+ALL CONFIRMED LIVE 2026-07-16 (session 3) — VOICE WORKS BOTH WAYS:
+  [x] aoc_probe.py connected instantly; radio streams RX SBC the moment the
+      channel is open (no handshake needed). is_aoc_connected mirrors it.
+      Captured 12 s off-air (aoc_capture.py -> captures/rx.sbc): 44-byte SBC
+      frames, header 0x9c 0x71 0x12 exactly as predicted, 7 frames per 0x7e
+      packet, real-time rate (3010 frames = 12.04 s).
+  [x] SBC codec = ffmpeg pipes (full build on this box; no Python port
+      needed). Decode: -f sbc -i pipe:0 -f s16le -flush_packets 1 pipe:1.
+      Encode: -f s16le -ar 32000 -ac 1 -i pipe:0 -c:a sbc -b:a 88k -f sbc
+      -> byte-identical framing to the radio (header 0x71, bitpool 18,
+      44 B/frame; 1 kHz tone round-trips clean).
+  [x] audio.py rewritten as the AOC bridge (WinRT StreamSocket + two ffmpeg
+      subprocesses); app.py /ws/audio + Voice tab now 32 kHz. HFP code gone.
+  [x] LIVE TX TEST PASSED: /api/ptt/1 + 2.5 s 1 kHz tone over /ws/audio ->
+      radio KEYED (is_in_tx true mid-tone); END frame on /api/ptt/0 ->
+      unkeyed (is_in_tx false). PTT is exactly as documented: implicit on
+      audio flow, no control-channel command involved (require_connected
+      dropped from /api/ptt — the AOC link is independent of control).
+  Gotcha fixed along the way: RX (ws client) and TX (PTT) racing to open the
+  AOC socket threw WSAEADDRINUSE — connect() is now behind an asyncio.Lock.
+
+TX AUDIO TUNING (live A/B tests with operator listening on a 2nd radio):
+  - bitpool 18 TX: radio KEYS and holds the carrier, but the aired audio is
+    broken (operator heard only a brief beep). bitpool 40 (-b:a 176k, 88 B
+    frames, 3 per 0x7e packet — exactly HTCommander's TX settings) airs
+    CLEAN. So TX at bp40 even though the radio RXes to us at bp18.
+  - Pacing: exact real-time delivery airs CHOPPY; giving the radio a lead
+    buffer fixes it — 0.3 s clean (0.5 s also clean). HTCommander runs up to
+    1 s ahead. Bridge now holds TX_LEAD_S=0.3 s of SBC before the first
+    packet (costs the same in PTT-to-air latency).
+  - The radio sent NO 0x02 acks and NO 0x09 echo during any of our TX runs
+    (HTCommander handles both; maybe fw/version dependent) — don't rely on
+    echo for TX metering.
 
 ------------------------------------------------------------------------
 13. REMOTE ACCESS  (control from outside the LAN — built 2026-07-16)
@@ -547,6 +573,28 @@ localStorage and attaches it everywhere. Verified: no/bad token -> 401,
 header/qs token -> 200, page always served. Put TLS in front (reverse proxy
 or Cloudflare Tunnel) before real internet exposure — the token rides the
 request, so it must be over wss/https.
+
+------------------------------------------------------------------------
+13b. PAIRING MODE & REMOTE WAKE  (answered live 2026-07-16)
+------------------------------------------------------------------------
+The operator's "tick pairing mode on the radio before connecting" dance is
+NOT needed for this app. Live-verified end to end:
+  - Windows holds BOTH bonds (classic + LE) for 38:D2:00:01:3E:CC and they
+    persist (is_paired true, can_pair false).
+  - The radio's BT SoC stays alive in SOFT-OFF: with the radio powered off
+    (SET_HT_ON_OFF 0 -> is_power_on false) the serial/COM5 classic connect
+    still succeeds from cold — full GET_HT_STATUS/settings/channels work.
+    SET_HT_ON_OFF(1) then powers the radio ON remotely (~2 s to boot).
+    This is how HTCommander "powers on the radio every time" (classic-only).
+  - Pairing mode is (almost certainly) only needed for BLE *scanning* — the
+    radio only ADVERTISES while pairable. With mac+COM5 saved in config no
+    scan is ever needed, so no pairing mode, ever.
+  - Radio setting pairing_at_power_on=1 (in Rab's current settings) opens a
+    pairing window at every power-on — harmless, and explains why pairing
+    "seemed" related to power state.
+app.py: connect_radio() now wakes a soft-off radio automatically after
+connect (config wake_on_connect, default true). Verified: radio off + link
+down -> one POST /api/connect -> connected AND powered on.
 
 ------------------------------------------------------------------------
 14. FIRMWARE / FOTA — does the vendor app need root?  (answered 2026-07-16)

@@ -499,9 +499,10 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 <div class="tab" id="tab-voice">
   <div class="card">
     <h2>Voice / audio bridge</h2>
-    <p class="muted" style="margin-top:0">Radio audio rides the Bluetooth
-      Hands-Free link on the bridge machine, streamed to this browser over a
-      WebSocket. Press &amp; hold PTT to transmit your mic to the air.</p>
+    <p class="muted" style="margin-top:0">Radio audio rides the radio's own
+      AOC Bluetooth audio channel (SBC 32&nbsp;kHz) on the bridge machine,
+      streamed to this browser over a WebSocket. Press &amp; hold PTT to
+      transmit your mic to the air — the radio keys itself when audio flows.</p>
     <div id="audioStatus" class="kv">checking audio bridge…</div>
     <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px">
       <button id="pttBtn" class="ptt" disabled>PTT</button>
@@ -1648,18 +1649,18 @@ try{setLcdTheme(localStorage.getItem("lcdTheme")||"amber");}catch(e){}
 /* ---------------- voice / audio bridge ---------------- */
 let audioWs=null, rxCtx=null, rxGain=null, rxNext=0, rxEnabled=false;
 let txCtx=null, txStream=null, txSrc=null, txProc=null, keyed=false, micReady=null;
-const RADIO_RATE=8000;
+const RADIO_RATE=32000;   // AOC channel SBC rate (32 kHz mono)
 
 async function refreshAudio(){
   try{
     const s=await api("/api/audio/status");
     const el=$("audioStatus");
-    const link=s.link_up?"<b>up</b>":"<span class='muted'>not found</span>";
+    const link=s.link_up?"<b>open</b>":"<span class='muted'>closed</span>";
     el.innerHTML=
-      `Bridge audio: ${s.have_audio?"available":"<span class='muted'>libs missing</span>"} · `+
-      `Hands-Free link: ${link} · HFP flag: ${s.hfp_connected?"<b>yes</b>":"no"}<br>`+
-      `RX dev ${s.rx_device??"–"} · TX dev ${s.tx_device??"–"} · ${s.rate} Hz mono`;
-    $("pttBtn").disabled=!(s.link_up&&state.connected);
+      `Bridge: ${s.have_audio?"ready (ffmpeg+winrt)":"<span class='muted'>ffmpeg/winrt missing</span>"} · `+
+      `AOC audio link: ${link} · radio AOC flag: ${s.aoc_connected?"<b>yes</b>":"no"}<br>`+
+      `${s.rate} Hz mono SBC`+(s.error?` · <span class='muted'>last error: ${esc(s.error)}</span>`:"");
+    $("pttBtn").disabled=!s.have_audio;
   }catch(e){$("audioStatus").innerHTML="audio status error: "+esc(e.message);}
 }
 
