@@ -72,11 +72,27 @@ except Exception as e:                                    # noqa: BLE001
     log.warning("winrt unavailable (%s) — AOC voice bridge disabled", e)
 
 
+def _app_dir() -> str:
+    """Directory the app lives in: next to the exe when packaged, else here."""
+    import sys
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
 def find_ffmpeg(configured: str | None = None) -> Optional[str]:
-    """ffmpeg lives wherever the user put it; config wins, PATH second,
-    then the known local install."""
-    for cand in (configured, shutil.which("ffmpeg"),
-                 r"C:\Users\scanner\Desktop\ffmpeg\bin\ffmpeg.exe"):
+    """ffmpeg lives wherever the user put it: config wins, then PATH, then
+    next to the app (drop ffmpeg.exe or an ffmpeg/bin tree beside the exe),
+    then common install spots."""
+    exe = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    here = _app_dir()
+    for cand in (configured,
+                 shutil.which("ffmpeg"),
+                 os.path.join(here, exe),
+                 os.path.join(here, "ffmpeg", "bin", exe),
+                 os.path.join(here, "ffmpeg", exe),
+                 os.path.expanduser("~/Desktop/ffmpeg/bin/" + exe),
+                 r"C:\ffmpeg\bin\ffmpeg.exe" if os.name == "nt" else None):
         if cand and os.path.isfile(cand):
             return cand
     return None

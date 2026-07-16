@@ -24,10 +24,6 @@ import benshi as bp
 import prop
 from radio import AprsRadio, scan_devices
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s %(name)s %(levelname)s %(message)s")
-log = logging.getLogger("app")
-
 import sys
 if getattr(sys, "frozen", False):
     # packaged (PyInstaller): static files are unpacked to _MEIPASS (read-only);
@@ -38,6 +34,19 @@ else:
     BASE = pathlib.Path(__file__).parent
     DATA_DIR = BASE
 CONFIG_PATH = DATA_DIR / "config.json"
+
+_LOG_FMT = "%(asctime)s %(name)s %(levelname)s %(message)s"
+if getattr(sys, "frozen", False):
+    # windowed exe: no console (sys.stderr is None) — log to a rotating file
+    # next to the exe instead, or every message and crash would vanish.
+    from logging.handlers import RotatingFileHandler
+    _fh = RotatingFileHandler(DATA_DIR / "vrn7600.log", maxBytes=1_000_000,
+                              backupCount=2, encoding="utf-8")
+    _fh.setFormatter(logging.Formatter(_LOG_FMT))
+    logging.basicConfig(level=logging.INFO, handlers=[_fh])
+else:
+    logging.basicConfig(level=logging.INFO, format=_LOG_FMT)
+log = logging.getLogger("app")
 
 DEFAULT_CONFIG = {
     "mac": "",

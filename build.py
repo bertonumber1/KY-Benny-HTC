@@ -30,5 +30,14 @@ PyInstaller.__main__.run([
     "--hidden-import=uvicorn.protocols.http.auto",
     "--hidden-import=uvicorn.protocols.websockets.auto",
     "--hidden-import=uvicorn.lifespan.on",
+    "--hidden-import=websockets",
+    # AOC voice bridge (audio.py) imports these inside a try block, which
+    # PyInstaller's static analysis can miss:
+    "--hidden-import=winrt.windows.devices.bluetooth",
+    "--hidden-import=winrt.windows.devices.bluetooth.rfcomm",
+    "--hidden-import=winrt.windows.networking.sockets",
+    "--hidden-import=winrt.windows.storage.streams",
+    "--hidden-import=winrt.windows.foundation",
+    "--hidden-import=winrt.windows.foundation.collections",
 ])
 print("\nBuilt. Run it from dist/ — it opens the UI in its own window.")
