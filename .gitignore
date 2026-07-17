@@ -1,5 +1,6 @@
 config.json
 aprs_history.jsonl
+recordings/
 __pycache__/
 *.pyc
 *.log
