@@ -425,3 +425,263 @@ class AudioBridge:
     # ---- teardown --------------------------------------------------------
     async def close(self) -> None:
         await self.disconnect()
+
+
+# ---------------------------------------------------------------- Opus relay
+
+class OggPacketParser:
+    """Extract raw packets from an Ogg byte stream (read-only, no CRC check).
+
+    Enough for a live ffmpeg ogg/opus pipe: accumulates pages, joins lacing
+    segments (and continued packets), yields each finished packet."""
+
+    def __init__(self):
+        self.buf = bytearray()
+        self._partial = bytearray()
+
+    def feed(self, data: bytes) -> list[bytes]:
+        self.buf += data
+        out = []
+        while True:
+            i = self.buf.find(b"OggS")
+            if i < 0:
+                if len(self.buf) > 3:          # keep a possible partial magic
+                    del self.buf[:-3]
+                break
+            if i:
+                del self.buf[:i]
+            if len(self.buf) < 27:
+                break
+            nsegs = self.buf[26]
+            if len(self.buf) < 27 + nsegs:
+                break
+            segs = self.buf[27:27 + nsegs]
+            body_len = sum(segs)
+            total = 27 + nsegs + body_len
+            if len(self.buf) < total:
+                break
+            body = self.buf[27 + nsegs:total]
+            del self.buf[:total]
+            pos = 0
+            for s in segs:
+                self._partial += body[pos:pos + s]
+                pos += s
+                if s < 255:                    # lacing < 255 ends a packet
+                    out.append(bytes(self._partial))
+                    self._partial = bytearray()
+        return out
+
+
+class OpusRxStreamer:
+    """PCM (int16 mono RADIO_RATE) -> ffmpeg libopus -> raw opus packets.
+
+    One shared instance serves every opus-capable browser: ~24 kbit/s versus
+    512 kbit/s for the raw-PCM fallback path."""
+
+    def __init__(self, ffmpeg: str):
+        self.ffmpeg = ffmpeg
+        self.packet_cb: Optional[Callable[[bytes], None]] = None  # async
+        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._task: Optional[asyncio.Task] = None
+        self._skip = 2                          # OpusHead + OpusTags
+
+    @property
+    def active(self) -> bool:
+        return self._proc is not None
+
+    async def start(self) -> None:
+        if self._proc:
+            return
+        self._skip = 2
+        self._proc = await asyncio.create_subprocess_exec(
+            self.ffmpeg, "-hide_banner", "-loglevel", "error",
+            "-f", "s16le", "-ar", str(RADIO_RATE), "-ac", "1", "-i", "pipe:0",
+            "-c:a", "libopus", "-b:a", "24k", "-application", "voip",
+            "-frame_duration", "20", "-ar", "48000",
+            "-page_duration", "20000",          # one ogg page per packet
+            "-f", "ogg", "-flush_packets", "1", "pipe:1",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL)
+        self._task = asyncio.create_task(self._pump())
+        log.info("opus RX encoder up (pid %s)", self._proc.pid)
+
+    def feed(self, pcm: bytes) -> None:
+        if self._proc and self._proc.stdin:
+            try:
+                self._proc.stdin.write(pcm)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    async def _pump(self) -> None:
+        parser = OggPacketParser()
+        try:
+            while self._proc and self._proc.stdout:
+                data = await self._proc.stdout.read(4096)
+                if not data:
+                    break
+                for pkt in parser.feed(data):
+                    if self._skip:
+                        self._skip -= 1
+                        continue
+                    if self.packet_cb:
+                        res = self.packet_cb(pkt)
+                        if asyncio.iscoroutine(res):
+                            await res
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:                            # noqa: BLE001
+            log.warning("opus rx pump: %s", e)
+
+    async def stop(self) -> None:
+        if self._task:
+            self._task.cancel()
+            self._task = None
+        if self._proc:
+            await _reap(self._proc)
+            self._proc = None
+
+
+class RxRecorder:
+    """Record RX audio to WAV files, one file per over.
+
+    The AOC channel only carries SBC while the squelch is open, so PCM flow
+    IS the squelch: a gap longer than GAP_S closes the current file. Keeps
+    the newest KEEP files in <dir>/recordings."""
+
+    GAP_S = 1.2
+    MAX_S = 120           # hard cap per file
+    KEEP = 30
+
+    def __init__(self, data_dir):
+        import pathlib
+        self.dir = pathlib.Path(data_dir) / "recordings"
+        self.enabled = True
+        self._wav = None
+        self._path = None
+        self._frames = 0
+        self._last = 0.0
+
+    def feed(self, pcm: bytes) -> None:
+        if not self.enabled:
+            return
+        import time as _t
+        import wave
+        now = _t.monotonic()
+        if self._wav and (now - self._last > self.GAP_S
+                          or self._frames > RADIO_RATE * self.MAX_S):
+            self.close()
+        if self._wav is None:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            name = _t.strftime("rx-%Y%m%d-%H%M%S") + ".wav"
+            self._path = self.dir / name
+            self._wav = wave.open(str(self._path), "wb")
+            self._wav.setnchannels(1)
+            self._wav.setsampwidth(2)
+            self._wav.setframerate(RADIO_RATE)
+            log.info("recording %s", name)
+        self._wav.writeframes(pcm)
+        self._frames += len(pcm) // 2
+        self._last = now
+
+    def maybe_close(self) -> None:
+        """Finalize the open file once the squelch gap has passed (poll me)."""
+        import time as _t
+        if self._wav and _t.monotonic() - self._last > self.GAP_S:
+            self.close()
+
+    def close(self) -> None:
+        if self._wav:
+            try:
+                self._wav.close()
+            except Exception:                             # noqa: BLE001
+                pass
+            # drop blips shorter than 300 ms — squelch crashes, not overs
+            if self._frames < RADIO_RATE * 0.3 and self._path:
+                try:
+                    self._path.unlink()
+                except OSError:
+                    pass
+            self._wav = None
+            self._path = None
+            self._frames = 0
+            self._prune()
+
+    def _prune(self) -> None:
+        try:
+            files = sorted(self.dir.glob("rx-*.wav"))
+            for f in files[:-self.KEEP]:
+                f.unlink()
+        except OSError:
+            pass
+
+    def list(self) -> list[dict]:
+        try:
+            out = []
+            for f in sorted(self.dir.glob("rx-*.wav"), reverse=True):
+                st = f.stat()
+                out.append({"name": f.name, "bytes": st.st_size,
+                            "seconds": round(max(0, st.st_size - 44)
+                                             / (RADIO_RATE * 2), 1),
+                            "mtime": int(st.st_mtime)})
+            return out
+        except OSError:
+            return []
+
+
+class WebmMicDecoder:
+    """Browser MediaRecorder (webm/opus) chunks -> PCM int16 mono RADIO_RATE.
+
+    One instance per PTT press: MediaRecorder emits a fresh WebM header at
+    every start(), which is exactly one ffmpeg run."""
+
+    def __init__(self, ffmpeg: str, pcm_cb: Callable[[bytes], None]):
+        self.ffmpeg = ffmpeg
+        self.pcm_cb = pcm_cb
+        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._task: Optional[asyncio.Task] = None
+
+    async def start(self) -> None:
+        self._proc = await asyncio.create_subprocess_exec(
+            self.ffmpeg, "-hide_banner", "-loglevel", "error",
+            "-fflags", "nobuffer", "-i", "pipe:0",
+            "-f", "s16le", "-ar", str(RADIO_RATE), "-ac", "1",
+            "-flush_packets", "1", "pipe:1",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL)
+        self._task = asyncio.create_task(self._pump())
+        log.info("mic webm decoder up (pid %s)", self._proc.pid)
+
+    def feed(self, webm: bytes) -> None:
+        if self._proc and self._proc.stdin:
+            try:
+                self._proc.stdin.write(webm)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    async def _pump(self) -> None:
+        try:
+            while self._proc and self._proc.stdout:
+                data = await self._proc.stdout.read(4096)
+                if not data:
+                    break
+                self.pcm_cb(data)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:                            # noqa: BLE001
+            log.warning("mic decoder pump: %s", e)
+
+    async def stop(self) -> None:
+        if self._proc and self._proc.stdin:
+            try:
+                self._proc.stdin.close()                  # flush the tail
+            except Exception:                             # noqa: BLE001
+                pass
+        if self._task:
+            try:
+                await asyncio.wait_for(self._task, timeout=1.5)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                self._task.cancel()
+            self._task = None
+        if self._proc:
+            await _reap(self._proc)
+            self._proc = None

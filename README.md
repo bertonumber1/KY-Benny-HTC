@@ -37,9 +37,19 @@ Bluetooth-only; this bridge is what puts it on the network.
 
 - Radio audio rides its AOC Bluetooth channel (SBC, 32 kHz mono) through
   ffmpeg to the browser over a binary WebSocket — both directions.
+- **Opus on the wire** (~24 kbit/s each way instead of 512 kbit/s raw PCM):
+  RX via WebCodecs `AudioDecoder`, TX via MediaRecorder webm/opus — usable
+  over 4G, with automatic raw-PCM fallback for older browsers.
 - Press-and-hold PTT keys the radio from your browser mic; verified on-air
   both ways against real hardware. Windows bridge only for now; Linux port
   planned.
+- **Multi-operator aware**: several browsers can listen at once; the first
+  to key owns the transmitter, everyone else sees "TX (remote op)" until
+  release, and a dropped connection auto-unkeys (dead-man).
+- **RX log**: every received over is recorded server-side (one WAV each,
+  newest 30 kept) and replayable from the Voice tab.
+- **Installable (PWA)**: add it to your phone's home screen — standalone
+  window, app icon, offline shell cache.
 
 ![Voice](docs/screenshots/voice.png)
 

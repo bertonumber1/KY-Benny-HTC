@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import pathlib
+import re
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -118,7 +119,11 @@ radio.event_cb = on_radio_event
 
 # ---- voice bridge (AOC RFCOMM SBC <-> browser) --------------------------
 bridge = audio.AudioBridge(ffmpeg=config.get("ffmpeg_path"))
-audio_clients: set[WebSocket] = set()
+audio_clients: dict[WebSocket, dict] = {}     # ws -> {"codec","cid"}
+opus_rx: audio.OpusRxStreamer | None = None
+mic_decoder: audio.WebmMicDecoder | None = None
+recorder = audio.RxRecorder(DATA_DIR)
+ptt_owner: str | None = None                  # client id currently keying
 
 
 def _sync_bridge_addr() -> None:
@@ -133,18 +138,50 @@ def _sync_bridge_addr() -> None:
 _sync_bridge_addr()
 
 
-async def _broadcast_rx(pcm: bytes) -> None:
-    """Push one RX PCM frame (int16 mono 32 kHz) to every audio-WS client."""
+async def _on_rx_pcm(pcm: bytes) -> None:
+    """RX tee: recorder + raw-PCM clients + the shared opus encoder."""
+    recorder.feed(pcm)
+    if opus_rx and opus_rx.active:
+        opus_rx.feed(pcm)
     dead = []
-    for ws in audio_clients:
+    for ws, meta in audio_clients.items():
+        if meta["codec"] != "pcm":
+            continue
         try:
             await ws.send_bytes(pcm)
         except Exception:
             dead.append(ws)
     for ws in dead:
-        audio_clients.discard(ws)
+        audio_clients.pop(ws, None)
 
-bridge.rx_cb = _broadcast_rx
+
+async def _broadcast_opus(pkt: bytes) -> None:
+    """One raw opus packet (20 ms @ 48 kHz) to every opus-capable client."""
+    dead = []
+    for ws, meta in audio_clients.items():
+        if meta["codec"] != "opus":
+            continue
+        try:
+            await ws.send_bytes(pkt)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        audio_clients.pop(ws, None)
+
+
+async def _ensure_opus_rx() -> None:
+    global opus_rx
+    if any(m["codec"] == "opus" for m in audio_clients.values()):
+        if opus_rx is None and bridge.ffmpeg:
+            opus_rx = audio.OpusRxStreamer(bridge.ffmpeg)
+            opus_rx.packet_cb = _broadcast_opus
+        if opus_rx and not opus_rx.active:
+            await opus_rx.start()
+    elif opus_rx and opus_rx.active:
+        await opus_rx.stop()
+
+
+bridge.rx_cb = _on_rx_pcm
 
 
 def token_ok(supplied: str | None) -> bool:
@@ -218,6 +255,7 @@ async def keeper():
                     })
         except Exception as e:
             log.warning("keeper: %s", e)
+        recorder.maybe_close()        # finalize an over once the gap passes
         await asyncio.sleep(1)
 
 
@@ -253,6 +291,13 @@ app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 @app.get("/")
 async def index():
     return FileResponse(BASE / "static" / "index.html")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    """Served from the root so the service worker's scope covers '/'."""
+    return FileResponse(BASE / "static" / "sw.js",
+                        media_type="application/javascript")
 
 
 @app.get("/api/state")
@@ -736,6 +781,12 @@ async def api_audio_status():
     st = bridge.status()
     st["aoc_connected"] = bool(radio.ht_status and
                                getattr(radio.ht_status, "is_aoc_connected", False))
+    st["opus_available"] = bool(bridge.ffmpeg)
+    st["listeners"] = {"opus": sum(1 for m in audio_clients.values()
+                                   if m["codec"] == "opus"),
+                       "pcm": sum(1 for m in audio_clients.values()
+                                  if m["codec"] == "pcm")}
+    st["ptt_owner"] = ptt_owner
     return st
 
 
@@ -747,22 +798,81 @@ async def api_audio_relay(on: int):
 
 
 @app.post("/api/ptt/{on}")
-async def api_ptt(on: int):
+async def api_ptt(on: int, cid: str = ""):
     """Key (1) / unkey (0) transmit. AOC PTT is implicit: the radio keys
     itself when SBC audio frames start arriving and unkeys on the end frame,
-    so key = start the encoder pipeline, unkey = flush + end frame. The
-    control-channel DO_PROG_FUNC path never keyed TX (FINDINGS §12)."""
+    so key = start the encoder pipeline, unkey = flush + end frame.
+
+    Multi-operator arbitration: first ?cid= to key owns the transmitter;
+    a different cid gets 409 until release. The owner's audio-WS dropping
+    force-unkeys (dead-man, see ws_audio)."""
+    global ptt_owner, mic_decoder
     keyed = bool(on)
-    try:
-        if keyed:
+    cid = cid[:40]
+    if keyed:
+        if bridge.tx_active and ptt_owner and cid != ptt_owner:
+            raise HTTPException(409, "transmitter keyed by another operator")
+        try:
             _sync_bridge_addr()
             await bridge.start_tx()
-        else:
+        except Exception as e:                    # noqa: BLE001
+            raise HTTPException(502, f"ptt: {e}")
+        ptt_owner = cid or "unknown"
+    else:
+        if bridge.tx_active and ptt_owner and cid and cid != ptt_owner:
+            raise HTTPException(409, "transmitter keyed by another operator")
+        try:
+            if mic_decoder:                       # flush the webm tail first
+                await mic_decoder.stop()
+                mic_decoder = None
             await bridge.stop_tx()
+        except Exception as e:                    # noqa: BLE001
+            raise HTTPException(502, f"ptt: {e}")
+        ptt_owner = None
+    await broadcast("ptt", {"tx": keyed, "owner": ptt_owner})
+    return {"tx": keyed, "owner": ptt_owner}
+
+
+async def _force_unkey(reason: str) -> None:
+    """Dead-man release: owner vanished (WS drop) while keyed."""
+    global ptt_owner, mic_decoder
+    log.warning("force unkey: %s", reason)
+    try:
+        if mic_decoder:
+            await mic_decoder.stop()
+            mic_decoder = None
+        await bridge.stop_tx()
     except Exception as e:                        # noqa: BLE001
-        raise HTTPException(502, f"ptt: {e}")
-    await broadcast("ptt", {"tx": keyed})
-    return {"tx": keyed}
+        log.warning("force unkey: %s", e)
+    ptt_owner = None
+    await broadcast("ptt", {"tx": False, "owner": None})
+
+
+@app.get("/api/recordings")
+async def api_recordings():
+    """Newest-first list of recorded RX overs (one WAV per over)."""
+    return recorder.list()
+
+
+@app.get("/api/recordings/{name}")
+async def api_recording(name: str):
+    if not re.fullmatch(r"rx-\d{8}-\d{6}\.wav", name):
+        raise HTTPException(400, "bad name")
+    path = recorder.dir / name
+    if not path.exists():
+        raise HTTPException(404, "gone")
+    return FileResponse(path, media_type="audio/wav")
+
+
+@app.delete("/api/recordings/{name}")
+async def api_recording_delete(name: str):
+    if not re.fullmatch(r"rx-\d{8}-\d{6}\.wav", name):
+        raise HTTPException(400, "bad name")
+    try:
+        (recorder.dir / name).unlink()
+    except OSError:
+        raise HTTPException(404, "gone")
+    return {"ok": True}
 
 
 class PhoneStatusBody(BaseModel):
@@ -782,15 +892,22 @@ async def api_phone_status(body: PhoneStatusBody):
 
 @app.websocket("/ws/audio")
 async def ws_audio(ws: WebSocket):
-    """Binary PCM both ways: server->client = RX (radio off-air audio),
-    client->server = TX (operator mic, only sent while PTT is keyed). Frames
-    are int16 mono little-endian at audio.RADIO_RATE (32 kHz)."""
+    """Bidirectional radio audio. Codec negotiated by ?codec=:
+      pcm  (default): both ways raw int16 mono at audio.RADIO_RATE (32 kHz).
+      opus: server->client raw opus packets (20 ms, 48 kHz mono, ~24 kbit/s);
+            client->server MediaRecorder webm/opus chunks while keyed.
+    ?cid= ties the connection to the PTT owner for dead-man release."""
+    global mic_decoder
     if not token_ok(ws.query_params.get("token")):
         await ws.close(code=1008)
         return
+    codec = ("opus" if ws.query_params.get("codec") == "opus"
+             and bridge.ffmpeg else "pcm")
+    cid = (ws.query_params.get("cid") or "")[:40]
     await ws.accept()
-    audio_clients.add(ws)
+    audio_clients[ws] = {"codec": codec, "cid": cid}
     try:
+        await _ensure_opus_rx()
         if not bridge.rx_active:
             try:
                 _sync_bridge_addr()
@@ -801,16 +918,28 @@ async def ws_audio(ws: WebSocket):
             msg = await ws.receive()
             if msg.get("type") == "websocket.disconnect":
                 break
-            if msg.get("bytes") is not None:
-                bridge.feed_tx(msg["bytes"])      # operator mic -> radio
+            if msg.get("bytes") is not None:      # operator mic -> radio
+                if codec == "opus":
+                    if mic_decoder is None and bridge.tx_active:
+                        mic_decoder = audio.WebmMicDecoder(
+                            bridge.ffmpeg, bridge.feed_tx)
+                        await mic_decoder.start()
+                    if mic_decoder:
+                        mic_decoder.feed(msg["bytes"])
+                else:
+                    bridge.feed_tx(msg["bytes"])
             elif msg.get("text") == "ping":
                 continue
     except WebSocketDisconnect:
         pass
     finally:
-        audio_clients.discard(ws)
+        audio_clients.pop(ws, None)
+        if cid and ptt_owner == cid and bridge.tx_active:
+            await _force_unkey(f"audio ws of PTT owner {cid} dropped")
+        await _ensure_opus_rx()
         if not audio_clients and not bridge.tx_active:    # last listener left
             await bridge.stop_rx()
+            recorder.close()
 
 
 @app.websocket("/ws")

@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VR-N7600 Remote</title>
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <style>
@@ -607,6 +611,15 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
     <div id="rfDiag" class="kv">waiting for RF poll… (Dashboard or Voice tab must be open, radio connected)</div>
   </div>
   <div class="card">
+    <h2>RX log <span class="pill" id="recCount">0</span>
+      <button style="float:right;padding:2px 8px;font-size:11px"
+        onclick="loadRecordings(1)">refresh</button></h2>
+    <p class="muted" style="font-size:12px;margin-top:0">
+      Every received over is recorded automatically while anyone is
+      listening (one WAV per over, newest first, last 30 kept).</p>
+    <div id="recList" class="kv">nothing recorded yet</div>
+  </div>
+  <div class="card">
     <h2>Keying &amp; relay <span class="muted" style="font-size:12px">(experimental — validating on hardware)</span></h2>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <button class="acc" onclick="setRelay(1)">Enable audio relay</button>
@@ -822,6 +835,7 @@ $("tabs").addEventListener("click",e=>{
   if(t==="aprs")setTimeout(()=>{initAprsMap();updateAprsMap();loadProp();},0);
   if(t==="settings")renderSettingsTab();
   if(t==="voice"||t==="dash")refreshAudio();
+  if(t==="voice")loadRecordings(1);
 });
 
 /* ---------------- helpers ---------------- */
@@ -896,7 +910,15 @@ function handleMsg(kind,d){
     logLine(`APRS ${d.dir}: ${esc(d.source)} ${d.type}`);}
   else if(kind==="data_rxd"){logLine("data rx: "+d.hex);}
   else if(kind==="position"){logLine(`position: ${d.latitude.toFixed(5)}, ${d.longitude.toFixed(5)}`);}
-  else if(kind==="ptt"){setTxUi(d.tx);}
+  else if(kind==="ptt"){
+    remoteTx=!!(d.tx&&d.owner&&d.owner!==CID);
+    if(remoteTx){                    // someone else is on the key
+      $("pttBtn").disabled=true;
+      $("pttHint").textContent="another operator is transmitting";
+      const p=$("txState");p.textContent="TX (remote op)";p.classList.add("txon");
+    }else if(!keyed){setTxUi(false);loadRecordings(0);}
+    else setTxUi(d.tx);
+  }
   else if(kind==="event"){logLine("event "+d.type+(d.hex?" "+d.hex:""));}
 }
 
@@ -1924,10 +1946,24 @@ loadProp();   // prop analytics work off stored history even when disconnected
   const btn=document.querySelector(`#tabs [data-tab="${CSS.escape(t)}"]`);
   if(btn)btn.click();
 }
+if("serviceWorker"in navigator&&location.protocol!=="file:")
+  navigator.serviceWorker.register("/sw.js").catch(()=>{});
 /* ---------------- voice / audio bridge ---------------- */
 let audioWs=null, rxCtx=null, rxGain=null, rxNext=0, rxEnabled=false;
 let txCtx=null, txStream=null, txSrc=null, txProc=null, keyed=false, micReady=null;
+let rxDecoder=null, txRec=null, remoteTx=false;
 const RADIO_RATE=32000;   // AOC channel SBC rate (32 kHz mono)
+/* Opus path: ~24 kbit/s each way instead of 512 kbit/s raw PCM — the
+   difference between LAN-only and usable over 4G. Needs WebCodecs
+   (AudioDecoder) for RX and MediaRecorder webm/opus for TX; falls back to
+   the original PCM path per direction when unsupported. */
+const OPUS=!!(window.AudioDecoder&&window.MediaRecorder&&
+  window.MediaRecorder.isTypeSupported&&
+  MediaRecorder.isTypeSupported("audio/webm;codecs=opus"));
+const RX_RATE=OPUS?48000:RADIO_RATE;
+const CID=(()=>{try{let c=localStorage.getItem("vrn_cid");
+  if(!c){c=Math.random().toString(36).slice(2,10);localStorage.setItem("vrn_cid",c);}
+  return c;}catch(e){return Math.random().toString(36).slice(2,10);}})();
 
 async function refreshAudio(){
   try{
@@ -1953,31 +1989,63 @@ async function refreshAudio(){
 
 function openAudioWs(){
   if(audioWs&&audioWs.readyState<=1)return audioWs;
+  const tok=authToken();
+  const q="?codec="+(OPUS?"opus":"pcm")+"&cid="+CID+
+    (tok?"&token="+encodeURIComponent(tok):"");
   audioWs=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+
-    location.host+"/ws/audio"+wsQuery());
+    location.host+"/ws/audio"+q);
   audioWs.binaryType="arraybuffer";
   audioWs.onmessage=e=>{
     if(typeof e.data==="string"){try{const j=JSON.parse(e.data);
       if(j.error)logLine("audio bridge: "+j.error);}catch(_){}return;}
-    playRx(e.data);
+    if(OPUS)decodeRx(e.data);else playRx(e.data);
   };
-  audioWs.onclose=()=>{audioWs=null;if(rxEnabled||keyed)setTimeout(openAudioWs,1500);};
+  audioWs.onclose=()=>{audioWs=null;rxDecoder=null;
+    if(rxEnabled||keyed)setTimeout(openAudioWs,1500);};
   return audioWs;
 }
 function closeAudioWsIfIdle(){if(!rxEnabled&&!keyed&&audioWs){audioWs.close();audioWs=null;}}
 
-function playRx(buf){
-  if(!rxEnabled)return;
-  if(!rxCtx){rxCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:RADIO_RATE});
+function ensureRxCtx(){
+  if(!rxCtx){rxCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:RX_RATE});
     rxGain=rxCtx.createGain();rxGain.connect(rxCtx.destination);setRxVol();}
-  const i16=new Int16Array(buf), f32=new Float32Array(i16.length);
-  for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
-  const ab=rxCtx.createBuffer(1,f32.length,RADIO_RATE);
+  if(rxCtx.state==="suspended")rxCtx.resume();
+}
+function scheduleRx(f32){
+  const ab=rxCtx.createBuffer(1,f32.length,RX_RATE);
   ab.getChannelData(0).set(f32);
   const src=rxCtx.createBufferSource();src.buffer=ab;src.connect(rxGain);
   const now=rxCtx.currentTime;
   if(rxNext<now)rxNext=now+0.06;          // small jitter buffer
   src.start(rxNext);rxNext+=ab.duration;
+}
+function playRx(buf){                      // raw-PCM fallback path
+  if(!rxEnabled)return;
+  ensureRxCtx();
+  const i16=new Int16Array(buf), f32=new Float32Array(i16.length);
+  for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
+  scheduleRx(f32);
+}
+let rxTs=0;
+function decodeRx(buf){                    // opus packets via WebCodecs
+  if(!rxEnabled)return;
+  ensureRxCtx();
+  if(!rxDecoder||rxDecoder.state==="closed"){
+    rxDecoder=new AudioDecoder({
+      output:d=>{
+        const f32=new Float32Array(d.numberOfFrames);
+        d.copyTo(f32,{planeIndex:0});
+        d.close();
+        scheduleRx(f32);
+      },
+      error:e=>{logLine("opus decode: "+esc(e.message));rxDecoder=null;}
+    });
+    rxDecoder.configure({codec:"opus",sampleRate:48000,numberOfChannels:1});
+    rxTs=0;
+  }
+  rxDecoder.decode(new EncodedAudioChunk({type:"key",timestamp:rxTs,
+    data:buf}));
+  rxTs+=20000;                             // 20 ms per packet, µs units
 }
 function setRxVol(){const v=$("rxVol").value;
   $("rxVolVal").textContent=v;if(rxGain)rxGain.gain.value=v/100;}
@@ -1996,9 +2064,25 @@ async function ensureMic(){
   txStream=await micReady;return micReady;
 }
 
-let txSilence=null;
+let txSilence=null, txOsc=null;
+function txSourceStream(toneHz,micOk){
+  /* One MediaStream feeds the opus recorder whatever we transmit:
+     the mic, a T-CALL tone, or silence (mic-less silent carrier). */
+  if(micOk)return txStream;
+  txCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
+  const dst=txCtx.createMediaStreamDestination();
+  if(toneHz){
+    txOsc=txCtx.createOscillator();txOsc.frequency.value=toneHz;
+    const g=txCtx.createGain();g.gain.value=0.8;
+    txOsc.connect(g);g.connect(dst);txOsc.start();
+  }else{
+    const c=txCtx.createConstantSource();c.offset.value=0;
+    c.connect(dst);c.start();
+  }
+  return dst.stream;
+}
 async function startTx(toneHz){
-  if(keyed||$("pttBtn").disabled)return;
+  if(keyed||$("pttBtn").disabled||remoteTx)return;
   keyed=true;setTxUi(true);
   let micOk=false;
   if(!toneHz){
@@ -2007,7 +2091,16 @@ async function startTx(toneHz){
   }
   try{
     openAudioWs();
-    if(micOk){
+    await post("/api/ptt/1?cid="+CID);     // key FIRST, then audio flows
+    if(OPUS){
+      txRec=new MediaRecorder(txSourceStream(toneHz,micOk),
+        {mimeType:"audio/webm;codecs=opus",audioBitsPerSecond:32000});
+      txRec.ondataavailable=ev=>{
+        if(ev.data.size&&audioWs&&audioWs.readyState===1)
+          ev.data.arrayBuffer().then(b=>{if(audioWs)audioWs.send(b);});
+      };
+      txRec.start(80);                     // ~80 ms webm chunks
+    }else if(micOk){
       txCtx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:RADIO_RATE});
       if(txCtx.state==="suspended")await txCtx.resume();
       txSrc=txCtx.createMediaStreamSource(txStream);
@@ -2022,8 +2115,6 @@ async function startTx(toneHz){
       };
       txSrc.connect(txProc);txProc.connect(txCtx.destination);
     }else{
-      // generated audio: a tone burst (T-CALL), or silence when there is
-      // no microphone — the radio still keys, like a mic-less base station
       let ph=0;
       txSilence=setInterval(()=>{
         if(!(keyed&&audioWs&&audioWs.readyState===1))return;
@@ -2036,23 +2127,37 @@ async function startTx(toneHz){
         audioWs.send(out.buffer);
       },16);
     }
-    await post("/api/ptt/1");
     if(toneHz)$("pttHint").textContent="sending "+toneHz+" Hz tone burst";
     else if(!micOk)$("pttHint").textContent="⚠ no microphone — transmitting silent carrier";
   }catch(e){
     logLine("PTT error: "+esc(e.message));
-    $("pttHint").textContent="PTT failed: "+e.message;
-    stopTx();
+    $("pttHint").textContent=/keyed by another/.test(e.message)?
+      "another operator is transmitting":"PTT failed: "+e.message;
+    keyed=false;setTxUi(false);
+    await teardownTx(false);
   }
+}
+async function teardownTx(flush){
+  if(txRec){
+    const rec=txRec;txRec=null;
+    if(flush&&rec.state!=="inactive"){
+      try{await new Promise(res=>{rec.onstop=res;rec.stop();
+        setTimeout(res,700);});}catch(e){}
+      await new Promise(res=>setTimeout(res,120));  // let the tail chunk send
+    }
+  }
+  if(txSilence){clearInterval(txSilence);txSilence=null;}
+  if(txOsc){try{txOsc.stop();}catch(e){}txOsc=null;}
+  if(txProc){txProc.disconnect();txProc.onaudioprocess=null;txProc=null;}
+  if(txSrc){txSrc.disconnect();txSrc=null;}
+  if(txCtx){txCtx.close();txCtx=null;}
 }
 async function stopTx(){
   if(!keyed)return;
   keyed=false;setTxUi(false);
-  try{await post("/api/ptt/0");}catch(e){logLine("unkey error: "+esc(e.message));}
-  if(txSilence){clearInterval(txSilence);txSilence=null;}
-  if(txProc){txProc.disconnect();txProc.onaudioprocess=null;txProc=null;}
-  if(txSrc){txSrc.disconnect();txSrc=null;}
-  if(txCtx){txCtx.close();txCtx=null;}
+  await teardownTx(true);                  // flush the last webm chunk first
+  try{await post("/api/ptt/0?cid="+CID);}
+  catch(e){logLine("unkey error: "+esc(e.message));}
   closeAudioWsIfIdle();
 }
 function setTxUi(on){
@@ -2076,6 +2181,38 @@ function renderRfDiag(){
     `state <b>${st}</b> · rssi ${s.rssi??"–"}/15 · byte1 ${b[1]} · `+
     `lvl2/3 ${b[2]}/${b[3]} · lvl4 ${b[4]}<br>`+
     `<span class="muted" style="font-family:ui-monospace,monospace;font-size:11px">${state.rf_raw}</span>`;
+}
+
+/* -------- RX log (server-side per-over WAV recordings) -------- */
+let recTimer=0;
+async function loadRecordings(force){
+  if(DEMO)return;
+  if(!force){                      // debounce the auto-refresh after an over
+    if(recTimer)return;
+    recTimer=setTimeout(()=>{recTimer=0;loadRecordings(1);},2500);
+    return;
+  }
+  try{
+    const l=await api("/api/recordings");
+    $("recCount").textContent=l.length;
+    if(!l.length){$("recList").innerHTML="nothing recorded yet";return;}
+    const tok=authToken();
+    $("recList").innerHTML=l.map(r=>{
+      const t=new Date(r.mtime*1000).toLocaleTimeString().slice(0,8);
+      const src="/api/recordings/"+encodeURIComponent(r.name)+
+        (tok?"?token="+encodeURIComponent(tok):"");
+      return`<div style="display:flex;gap:10px;align-items:center;margin:4px 0">
+        <span style="min-width:70px">${t}</span>
+        <span class="muted" style="min-width:44px">${r.seconds}s</span>
+        <audio controls preload="none" src="${src}" style="height:26px;flex:1"></audio>
+        <button style="padding:1px 7px;font-size:11px" title="delete"
+          onclick="delRecording('${esc(r.name)}')">✕</button></div>`;
+    }).join("");
+  }catch(e){$("recList").innerHTML="recordings: "+esc(e.message);}
+}
+async function delRecording(name){
+  try{await api("/api/recordings/"+encodeURIComponent(name),{method:"DELETE"});
+    loadRecordings(1);}catch(e){logLine("delete: "+e.message);}
 }
 
 async function setRelay(on){try{await post("/api/audio/relay/"+on);
