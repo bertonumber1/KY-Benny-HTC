@@ -13,7 +13,7 @@
 <style>
 :root{  /* AMOLED: true-black background, near-black panels */
   --bg:#000; --panel:#0a0d11; --panel2:#12171e; --line:#1d2530;
-  --text:#dbe6f4; --dim:#7d90a8; --acc:#2dd4bf; --warn:#fbbf24;
+  --text:#dbe6f4; --dim:#7d90a8; --acc:#4a9fd4; --on-acc:#04121c; --warn:#fbbf24;
   --bad:#f87171; --good:#4ade80; --tx:#f87171; --rx:#4ade80;
 }
 *{box-sizing:border-box}
@@ -25,7 +25,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   position:sticky;top:0;z-index:5}
 .badge{padding:2px 9px;border-radius:10px;font-size:12px;font-weight:600;
   background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
-.badge.on{color:#032;background:var(--acc);border-color:var(--acc)}
+.badge.on{color:var(--on-acc);background:var(--acc);border-color:var(--acc)}
 .badge.tx{color:#300;background:var(--tx);border-color:var(--tx)}
 .badge.rx{color:#031;background:var(--rx);border-color:var(--rx)}
 .badge.warn{color:#320;background:var(--warn);border-color:var(--warn)}
@@ -33,7 +33,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
 button{background:var(--panel2);color:var(--text);border:1px solid var(--line);
   border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px}
 button:hover{border-color:var(--acc)}
-button.acc{background:var(--acc);color:#04231f;border-color:var(--acc);font-weight:600}
+button.acc{background:var(--acc);color:var(--on-acc);border-color:var(--acc);font-weight:600}
 button.danger{border-color:var(--bad);color:var(--bad)}
 button:disabled{opacity:.4;cursor:default}
 nav{display:flex;gap:2px;padding:0 14px;background:var(--panel);
@@ -62,7 +62,7 @@ tr.selB td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
 .chname{font-weight:600}
 .dimtxt{color:var(--dim)}
 .abbtn{padding:2px 8px;font-size:11px;border-radius:4px}
-.abbtn.selected{background:var(--acc);color:#04231f;border-color:var(--acc)}
+.abbtn.selected{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
 .abbtn.selectedB{background:var(--warn);color:#320;border-color:var(--warn)}
 .row{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
 .row label{min-width:110px;color:var(--dim);font-size:12px}
@@ -74,7 +74,7 @@ input:invalid{border-color:var(--bad)}
 .val{min-width:34px;text-align:right;font-variant-numeric:tabular-nums}
 .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .seg button{border:0;border-radius:0;padding:5px 12px}
-.seg button.on{background:var(--acc);color:#04231f;font-weight:600}
+.seg button.on{background:var(--acc);color:var(--on-acc);font-weight:600}
 .logbox{font:12px/1.5 ui-monospace,Menlo,monospace;max-height:400px;
   overflow-y:auto;color:var(--dim);white-space:pre-wrap}
 .logbox .t{color:#4c637f}
@@ -224,13 +224,13 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 .smeter .segs{display:flex;gap:2.5px;align-items:flex-end;flex:1;max-width:340px}
 .smeter .seg7{width:100%;flex:1;height:9px;background:var(--fg);opacity:.13;
   border-radius:1px;transition:opacity .08s}
-.smeter .seg7.hot{background:#ff6e63}
+.smeter .seg7.hot.lit{background:#ff5a4d;box-shadow:0 0 7px color-mix(in srgb,#ff5a4d 65%,transparent)}
 .smeter .seg7.lit{opacity:1;box-shadow:0 0 6px color-mix(in srgb,var(--fg) 55%,transparent)}
 .smeter .seg7.peak{opacity:.75}
 .smeter .rd{font-size:11px;font-weight:800;color:var(--hi);width:58px;text-align:left;
   font-variant-numeric:tabular-nums}
 .smeter.txmode .seg7.lit{background:#ff6e63;box-shadow:0 0 6px rgba(255,110,99,.6)}
-.smeter-scale{grid-column:2/4;display:flex;gap:2.5px;max-width:340px;flex:1;
+.smeter-scale{grid-column:2/4;display:flex;gap:2.5px;max-width:362px;flex:1;
   font-size:8px;color:var(--dim);letter-spacing:0;margin:-1px 0 2px;padding-left:22px}
 .smeter-scale span{flex:1;text-align:center}
 .lcd-foot{border-top:1px solid var(--grid);margin-top:6px;padding-top:5px;
@@ -252,15 +252,17 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
 .rf-deck{display:grid;grid-template-columns:1fr auto;gap:6px 22px;align-items:center;
   border-top:1px solid #262d36;margin-top:10px;padding-top:10px}
 .rf-ctl{display:flex;align-items:center;gap:8px;margin:4px 0}
+.rf-ctl.sep{border-top:1px solid #1d2530;margin-top:9px;padding-top:9px}
 .rf-lbl{width:44px;flex:none;font-size:10px;font-weight:800;letter-spacing:1px;color:#7d8ea3}
 .rf-ctl select{flex:1;min-width:0}
-.rf-ctl input[type=range]{flex:1;min-width:0}
+.rf-ctl input[type=range]{flex:0 1 180px;min-width:0;height:4px;accent-color:var(--acc)}
 .rf-deck-r{display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 6px}
 .rf-deck-r .ptt{width:118px;height:118px;font-size:24px}
 @media(max-width:640px){
   .lcd-freq,.lcd-freq-ghost{font-size:22px}
   .lcd-flags{font-size:9px}
   .smeter .segs{max-width:220px}
+  .smeter-scale{max-width:242px}
   .rf-deck{grid-template-columns:1fr}
   .rf-deck-r{flex-direction:row;flex-wrap:wrap;justify-content:center}
 }
@@ -375,10 +377,6 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
     </div>
     <div class="rf-deck">
       <div class="rf-deck-l">
-        <div class="rf-ctl"><span class="rf-lbl">VFO A</span>
-          <select id="chSelA" onchange="selectCh('a',Number(this.value))" title="VFO A channel"></select></div>
-        <div class="rf-ctl"><span class="rf-lbl">VFO B</span>
-          <select id="chSelB" onchange="selectCh('b',Number(this.value))" title="VFO B channel"></select></div>
         <div class="rf-ctl"><span class="rf-lbl">VOL</span>
           <input type="range" id="vol" min="0" max="15" step="1" onchange="setVolume(this.value)"
             title="radio speaker volume">
@@ -392,6 +390,34 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
             <input type="checkbox" id="rxOn"> listen</label>
           <input type="range" id="rxVol" min="0" max="100" value="80" title="browser playback volume">
           <span class="val" id="rxVolVal">80</span></div>
+        <div class="rf-ctl sep"><span class="rf-lbl">MIC</span>
+          <select id="dMicGain" title="radio microphone gain (0–2)" style="flex:0 0 62px"
+            onchange="dashSet('mic_gain',this.value,'num')">
+            <option>0</option><option>1</option><option>2</option></select>
+          <span class="rf-lbl" style="width:auto;flex:none">BT</span>
+          <select id="dBtMic" title="Bluetooth microphone gain (0–2)" style="flex:0 0 62px"
+            onchange="dashSet('bt_mic_gain',this.value,'num')">
+            <option>0</option><option>1</option><option>2</option></select>
+          <label class="check" style="min-width:0;padding:0" title="microphone noise suppression">
+            <input type="checkbox" id="dNs" onchange="dashSet('ns_en',this.checked,'bool')"> NS</label></div>
+        <div class="rf-ctl"><span class="rf-lbl">VOX</span>
+          <label class="check" style="min-width:0;padding:0" title="voice-operated transmit">
+            <input type="checkbox" id="dVox" onchange="dashSet('vox_en',this.checked,'bool')"> on</label>
+          <span class="rf-lbl" style="width:auto;flex:none">LVL</span>
+          <input type="number" id="dVoxLevel" min="0" max="9" style="width:54px"
+            onchange="dashSet('vox_level',this.value,'num')" title="VOX trigger level">
+          <label class="check" style="min-width:0;padding:0" title="squelch-tail elimination">
+            <input type="checkbox" id="dTail" onchange="dashSet('tail_elim',this.checked,'bool')"> tail</label></div>
+        <div class="rf-ctl"><span class="rf-lbl">TX PWR</span>
+          <span style="font-size:11px;color:var(--dim)">A</span>
+          <input type="number" id="dPwrA" min="0" max="3" style="width:50px"
+            onchange="dashSet('vfo1_tx_power_x',this.value,'num')" title="VFO A TX power (0–3)">
+          <span style="font-size:11px;color:var(--dim)">B</span>
+          <input type="number" id="dPwrB" min="0" max="3" style="width:50px"
+            onchange="dashSet('vfo2_tx_power_x',this.value,'num')" title="VFO B TX power (0–3)">
+          <span class="rf-lbl" style="width:auto;flex:none">T/O</span>
+          <input type="number" id="dTxLimit" min="0" max="600" style="width:62px"
+            onchange="dashSet('tx_time_limit',this.value,'num')" title="TX time-out timer (s)"></div>
       </div>
       <div class="rf-deck-r">
         <button id="pttBtn" class="ptt" disabled>PTT</button>
@@ -424,11 +450,6 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
     </div>
     <ul id="scanList"></ul>
   </div>
-  <div class="card" id="radioInfoCard" style="display:none">
-    <h2>Radio info <span class="pill" id="riName">—</span></h2>
-    <div class="statgrid" id="riGrid"></div>
-    <div id="riCaps" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px"></div>
-  </div>
   <div class="cols">
     <div class="card">
       <h2>Radio</h2>
@@ -438,19 +459,7 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
         <div class="stat"><div class="v" id="stRssi">–</div><div class="k">RSSI</div></div>
         <div class="stat"><div class="v" id="stBatt">–</div><div class="k">Battery</div></div>
       </div>
-      <div class="row"><label>Dual watch</label>
-        <div class="seg" id="dwSeg">
-          <button data-v="0">Off</button><button data-v="1">A</button><button data-v="2">B</button>
-        </div>
-        <div class="spacer"></div>
-        <button onclick="powerRadio(1)">Power on</button>
-        <button class="danger" onclick="powerRadio(0)">Off</button>
-      </div>
-      <div class="row"><label>Channel scan</label>
-        <div class="seg" id="scanSeg">
-          <button data-v="0">Off</button><button data-v="1">On</button>
-        </div>
-        <div class="spacer"></div>
+      <div class="row"><label>GPS</label>
         <button onclick="getPosition()">GPS fix</button>
       </div>
       <div class="row" id="regionRow" style="display:none"><label>Region / zone</label>
@@ -464,11 +473,13 @@ legend{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.
         <button onclick="fmSeek('down')" title="seek down">⏮</button>
         <button onclick="fmSeek('up')" title="seek up">⏭</button>
       </div>
-      <div class="dimtxt" id="devInfo" style="font-size:11px;margin-top:6px"></div>
     </div>
     <div class="card">
-      <h2>Active channels</h2>
-      <div id="activeChans" class="dimtxt">–</div>
+      <h2>VFO channels</h2>
+      <div class="row"><label>VFO A</label>
+        <select id="chSelA" onchange="selectCh('a',Number(this.value))" title="VFO A channel" style="flex:1"></select></div>
+      <div class="row"><label>VFO B</label>
+        <select id="chSelB" onchange="selectCh('b',Number(this.value))" title="VFO B channel" style="flex:1"></select></div>
       <h2 style="margin-top:16px">Recent activity</h2>
       <div class="logbox" id="miniLog" style="max-height:220px"></div>
     </div>
@@ -1086,7 +1097,8 @@ function renderLcd(){
   }
   if(propData&&propData.meter&&propData.meter.max_km_hour>0)
     foot.push(`DX <b>${propData.meter.max_km_hour.toFixed(0)}</b> km`);
-  $("lcdFoot").innerHTML=foot.map(f=>`<span>${f}</span>`).join("");
+  $("lcdFoot").innerHTML=foot.map(f=>`<span>${f}</span>`).join("")
+    +(state.dev_info?`<span style="margin-left:auto">FW <b>v${esc(String(state.dev_info.soft_ver))}</b></span>`:"");
 }
 
 /* -------- hardware key row actions -------- */
@@ -1155,41 +1167,31 @@ function renderSettings(){
   $("stChA").textContent=(st.channel_a??0)+1;
   $("stChB").textContent=(st.channel_b??0)+1;
   $("sql").value=st.squelch_level??0;$("sqlVal").textContent=st.squelch_level??"–";
-  for(const b of $("dwSeg").children)
-    b.classList.toggle("on",Number(b.dataset.v)===(st.double_channel??0));
-  for(const b of $("scanSeg").children)
-    b.classList.toggle("on",Number(b.dataset.v)===(st.scan??0));
+  fillDashSet();
   renderChannels();renderActive();renderLcd();
 }
-function renderActive(){
-  const st=state.settings,s=state.ht_status;
-  if(!st||!state.channels.length){$("activeChans").textContent="–";return;}
-  const nm=i=>{const c=state.channels.find(x=>x.channel_id===i);
-    return c?`CH${i+1} ${esc(c.name)||mhz(c.rx_freq)}`:"CH"+(i+1);};
-  let html=`<div>A: <b>${nm(st.channel_a??0)}</b></div><div>B: <b>${nm(st.channel_b??0)}</b></div>`;
-  if(s)html+=`<div class="dimtxt" style="font-size:12px">radio on CH${(s.curr_ch_id??0)+1}${s.is_scan?" · scanning":""}</div>`;
-  $("activeChans").innerHTML=html;
+/* dashboard Radio-settings card — crucial mic/RF settings written live */
+const DASH_SET=[["dMicGain","mic_gain","num"],["dBtMic","bt_mic_gain","num"],
+  ["dPwrA","vfo1_tx_power_x","num"],["dPwrB","vfo2_tx_power_x","num"],
+  ["dTxLimit","tx_time_limit","num"],["dVoxLevel","vox_level","num"],
+  ["dVox","vox_en","bool"],["dNs","ns_en","bool"],["dTail","tail_elim","bool"]];
+function fillDashSet(){
+  const st=state.settings;if(!st)return;
+  for(const [el,f,kind] of DASH_SET){
+    const node=$(el),v=st[f];
+    if(!node||v===undefined)continue;
+    if(kind==="bool")node.checked=!!v;else node.value=v;
+  }
 }
-function renderDevInfo(){
-  const d=state.dev_info, card=$("radioInfoCard");
-  const di=$("devInfo");
-  if(!d){if(card)card.style.display="none";if(di)di.textContent="";return;}
-  if(card)card.style.display="";
-  $("riName").textContent=state.device_name||("product "+d.product_id);
-  const tiles=[
-    ["Firmware","v"+d.soft_ver],["Hardware","v"+d.hw_ver],
-    ["Channels",d.channel_count],["Freq ranges",d.freq_range_count],
-    ["Regions",d.region_count],["Link",(state.transport||"?").toUpperCase()],
-  ];
-  $("riGrid").innerHTML=tiles.map(([k,v])=>
-    `<div class="stat"><div class="v">${esc(String(v))}</div><div class="k">${esc(k)}</div></div>`).join("");
-  const caps=[["VFO",d.support_vfo],["Dual VFO",d.support_vfo],["DMR",d.support_dmr],
-    ["NOAA",d.support_noaa],["GMRS",d.gmrs],["FM radio",d.support_radio],
-    ["Med power",d.support_medium_power],["HM speaker",d.have_hm_speaker]];
-  $("riCaps").innerHTML=caps.map(([k,on])=>
-    `<span class="badge${on?" on":""}" style="opacity:${on?1:.35}">${on?"✓":"✗"} ${esc(k)}</span>`).join("");
-  if(di)di.textContent=`product ${d.product_id} hw ${d.hw_ver} fw ${d.soft_ver} · ${d.channel_count} channels`;
+async function dashSet(field,val,kind){
+  const v=kind==="bool"?!!val:(kind==="num"?Number(val):val);
+  state.settings=Object.assign({},state.settings||{});
+  state.settings[field]=v;
+  try{await post("/api/settings",{updates:{[field]:v}});logLine(field+" = "+v);}
+  catch(e){logLine(field+": "+e.message);}
 }
+function renderActive(){/* active channels now shown on the LCD + VFO selects */}
+function renderDevInfo(){/* firmware now shown in the LCD footer (renderLcd) */}
 function flags(c){
   const f=[];if(c.tx_disable)f.push("TXD");if(c.bclo)f.push("BCLO");
   if(c.talk_around)f.push("TA");if(c.mute)f.push("MUTE");if(c.rev)f.push("REV");
@@ -1814,18 +1816,6 @@ async function powerRadio(on){
   try{await post("/api/power/"+on);logLine("power "+(on?"on":"off")+" sent");}
   catch(e){logLine("power: "+e.message);}
 }
-$("dwSeg").addEventListener("click",async e=>{
-  if(e.target.dataset.v===undefined)return;
-  try{await post("/api/settings",{updates:{double_channel:Number(e.target.dataset.v)}});
-    state.settings.double_channel=Number(e.target.dataset.v);renderSettings();}
-  catch(err){logLine("dual watch: "+err.message);}
-});
-$("scanSeg").addEventListener("click",async e=>{
-  if(e.target.dataset.v===undefined)return;
-  try{await post("/api/settings",{updates:{scan:Number(e.target.dataset.v)}});
-    state.settings.scan=Number(e.target.dataset.v);renderSettings();}
-  catch(err){logLine("scan: "+err.message);}
-});
 async function getPosition(){
   try{const p=await api("/api/position");
     logLine(`GPS: ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}`+
@@ -1903,7 +1893,8 @@ function startDemo(){
      bandwidth_wide:true,tx_at_max_power:false,tx_at_med_power:false},
   ];
   state.settings={channel_a:1,channel_b:4,double_channel:1,scan:0,
-    squelch_level:3};
+    squelch_level:3,mic_gain:2,bt_mic_gain:1,vfo1_tx_power_x:3,vfo2_tx_power_x:1,
+    tx_time_limit:180,vox_level:3,vox_en:false,ns_en:true,tail_elim:true};
   state.volume=8;state.battery_pct=76;state.battery_voltage=8.21;
   state.bss={aprs_callsign:"M7RAB",aprs_ssid:7};
   state.region_names=["EU","US","JP","CN","AU","BR"];
